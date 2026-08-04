@@ -1,0 +1,174 @@
+{
+    "requests": [
+        {
+            "type": "execute",
+            "stmt": {
+                "sql": "INSERT INTO listings (advertisement_id, listing_title, property_type, price, price_per_sqft, size_sqft, bedrooms, bathrooms, furnishing, tenure, floor, car_parks, facilities, full_address, area, latitude, longitude, website, listing_url, listing_date, scraped_date, owner_name, agent_name, agent_agency, phone, contact_status, last_contact, viewing_date, remarks, summary, rating, rating_reason, scam_score, scam_reasons, duplicate_confidence, outreach_message, client_match, strategy_used, created_date, updated_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "args": [
+                    {
+                        "type": "integer",
+                        "value": "{{ json.listing_id }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.listing_title }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.property_type }}"
+                    },
+                    {
+                        "type": "float",
+                        "value": "{{ $json.price }}"
+                    },
+                    {
+                        "type": "float",
+                        "value": "{{ $json.price_per_sqft }}"
+                    },
+                    {
+                        "type": "float",
+                        "value": "{{ $json.size_sqft }}"
+                    },
+                    {
+                        "type": "integer",
+                        "value": "{{ $json.bedrooms }}"
+                    },
+                    {
+                        "type": "integer",
+                        "value": "{{ $json.bathrooms }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $json.furnishing }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $json.tenure }}"
+                    },
+                    {
+                        "type": "integer",
+                        "value": "{{ $json.floor }}"
+                    },
+                    {
+                        "type": "integer", "value": "{{ $json.car_parks }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.facilities }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.full_address }}"
+                    },
+                    {
+                        "type": "text", 
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.area }}"
+                    },
+                    {
+                        "type": "float", 
+                        "value": "{{ $json.latitude }}"
+                    },
+                    {
+                        "type": "float", 
+                        "value": "{{ $json.longitude }}"
+                    },
+                    {
+                        "type": "text", 
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.website }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.listing_url }}"
+                    },
+                    {
+                        "type": "text", 
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.listing_date }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.scraped_date }}"
+                    },
+                    {
+                        "type": "text", 
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.owner_name }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.agent_name }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.agent_agency }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.phone }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.contact_status }}"
+                    },
+                    {
+                        "type": "text", 
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.last_contact }}"
+                    },
+                    {
+                        "type": "text", 
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.viewing_date }}"
+                    },
+                    {
+                        "type": "text", 
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.remarks }}"
+                    },
+                    {
+                        "type": "text", 
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.summary }}"
+                    },
+                    {
+                        "type": "float",
+                        "value": "{{ $json.rating }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.rating_reason }}"
+                    },
+                    {
+                        "type": "integer", 
+                        "value": "{{ $json.scam_score }}"
+                    },
+                    {
+                        "type": "text", 
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.scam_reasons }}"
+                    },
+                    {
+                        "type": "text", 
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.duplicate_confidence }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.outreach_message }}"
+                    },
+                    {
+                        "type": "text", 
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.client_match }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.strategy_used }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.created_date }}"
+                    },
+                    {
+                        "type": "text",
+                        "value": "{{ $('Code in JavaScript – Extract HTML To JSON Final').item.json.updated_date }}"
+                    }
+                ]
+            }
+        },
+        {
+            "type": "close"
+        }
+    ]
+}
