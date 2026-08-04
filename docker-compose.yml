@@ -97,7 +97,7 @@ services:
       - N8N_RUNNERS_AUTH_TOKEN=${N8N_RUNNERS_AUTH_TOKEN}
       - N8N_NATIVE_PYTHON_RUNNER=true
     volumes:
-      - ./n8n-task-runners.json:/etc/n8n-task-runners.jsonc
+      - ./n8n-task-runners.jsonc:/etc/n8n-task-runners.jsonc
     depends_on:
       - n8n
 
