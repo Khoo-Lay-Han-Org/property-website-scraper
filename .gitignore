@@ -11,7 +11,8 @@
 *.sqlite3
 
 # --- scraper artifacts ---
-.cache/            # raw HTML disk cache
+# raw HTML disk cache
+.cache/
 outputs/
 
 # --- python ---
