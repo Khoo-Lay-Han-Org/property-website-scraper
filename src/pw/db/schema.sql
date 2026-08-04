@@ -1,4 +1,4 @@
--- Property Agent Workspace — V1 schema
+-- Property Agent Workspace -- V1 schema
 --
 -- Two halves:
 --   the book  : contacts, properties under mandate, relationships, interactions
@@ -14,7 +14,7 @@ PRAGMA foreign_keys = ON;
 
 -- ---------------------------------------------------------------- contacts --
 -- One row per person. A landlord on one deal is a buyer on the next, so role
--- deliberately does NOT live here — it lives on contact_properties.
+-- deliberately does NOT live here; it lives on contact_properties.
 CREATE TABLE IF NOT EXISTS contacts (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   name          TEXT,                        -- nullable: scraped listings often have only a phone
