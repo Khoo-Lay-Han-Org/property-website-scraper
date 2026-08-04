@@ -4,6 +4,7 @@ The inbox view is the feature most likely to be silently wrong (SQLite's two-arg
 scalar MAX vs the one-arg aggregate, NULL handling when one side never happened),
 so it gets exercised case by case.
 """
+
 from pathlib import Path
 
 import pytest
@@ -33,24 +34,25 @@ def _touch(db, contact_id, direction, occurred_at, channel="whatsapp"):
 
 
 def _inbox(db):
-    rows = db.execute(
-        "SELECT name, bucket, stale_hours FROM follow_up_inbox ORDER BY name"
-    )
+    rows = db.execute("SELECT name, bucket, stale_hours FROM follow_up_inbox ORDER BY name")
     return {r[0]: (r[1], r[2]) for r in rows}
 
 
 def test_schema_applies(db):
-    tables = {
-        r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    }
+    tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {
-        "contacts", "properties", "property_sources", "contact_properties",
-        "interactions", "price_history", "scrape_runs",
+        "contacts",
+        "properties",
+        "property_sources",
+        "contact_properties",
+        "interactions",
+        "price_history",
+        "scrape_runs",
     } <= tables
 
 
 def test_inbox_buckets(db):
-    never = _contact(db, "Never", "60100000001")          # noqa: F841 - inserted, untouched
+    never = _contact(db, "Never", "60100000001")  # noqa: F841 - inserted, untouched
     owed = _contact(db, "Owed", "60100000002")
     waiting = _contact(db, "Waiting", "60100000003")
     replied = _contact(db, "Replied", "60100000004")
@@ -68,9 +70,7 @@ def test_inbox_buckets(db):
     assert inbox["Never"][0] == "never_contacted"
     assert inbox["Owed"][0] == "owed_reply"
     assert inbox["Waiting"][0] == "awaiting_them"
-    assert inbox["Replied"][0] == "awaiting_them", (
-        "replying must move a contact out of owed_reply"
-    )
+    assert inbox["Replied"][0] == "awaiting_them", "replying must move a contact out of owed_reply"
 
 
 def test_never_contacted_has_null_stale_hours(db):
@@ -84,17 +84,14 @@ def test_stale_hours_measures_the_latest_touch(db):
     not merely the inbound one — otherwise a long-dormant thread you replied to
     yesterday still reports as weeks stale."""
     c = _contact(db, "Mixed", "60100000005")
-    _touch(db, c, "inbound", "2020-01-01T00:00:00")   # ancient
+    _touch(db, c, "inbound", "2020-01-01T00:00:00")  # ancient
     _touch(db, c, "outbound", "2020-01-02T00:00:00")  # ancient, but later
     db.commit()
 
     (_, hours) = _inbox(db)["Mixed"]
-    inbound_age = list(
-        db.execute("SELECT CAST((julianday('now') - julianday('2020-01-01T00:00:00')) * 24 AS INTEGER)")
-    )[0][0]
-    outbound_age = list(
-        db.execute("SELECT CAST((julianday('now') - julianday('2020-01-02T00:00:00')) * 24 AS INTEGER)")
-    )[0][0]
+    age_sql = "SELECT CAST((julianday('now') - julianday(?)) * 24 AS INTEGER)"
+    inbound_age = list(db.execute(age_sql, ("2020-01-01T00:00:00",)))[0][0]
+    outbound_age = list(db.execute(age_sql, ("2020-01-02T00:00:00",)))[0][0]
     assert hours == pytest.approx(outbound_age, abs=1), (
         f"expected age of the LATEST touch ({outbound_age}h), got {hours}h "
         f"(inbound was {inbound_age}h)"
@@ -110,8 +107,7 @@ def test_owed_reply_ordering_is_by_staleness(db):
 
     rows = list(
         db.execute(
-            "SELECT name FROM follow_up_inbox WHERE bucket='owed_reply'"
-            " ORDER BY stale_hours DESC"
+            "SELECT name FROM follow_up_inbox WHERE bucket='owed_reply' ORDER BY stale_hours DESC"
         )
     )
     assert [r[0] for r in rows] == ["Older", "Newer"]
@@ -142,9 +138,7 @@ def test_role_lives_on_the_relationship_not_the_person(db):
     db.commit()
 
     roles = {
-        r[0] for r in db.execute(
-            "SELECT role FROM contact_properties WHERE contact_id = ?", (c,)
-        )
+        r[0] for r in db.execute("SELECT role FROM contact_properties WHERE contact_id = ?", (c,))
     }
     assert roles == {"owner", "interested_buyer"}
 
@@ -155,6 +149,4 @@ def test_bad_enum_values_are_rejected(db):
     with pytest.raises(turso.IntegrityError):
         _touch(db, c, "sideways", "2026-08-01T09:00:00")
     with pytest.raises(turso.IntegrityError):
-        db.execute(
-            "INSERT INTO properties (acquisition) VALUES ('borrowed')"
-        )
+        db.execute("INSERT INTO properties (acquisition) VALUES ('borrowed')")
