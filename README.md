@@ -9,6 +9,6 @@ A single Malaysian property agent's working tool: **the book** (own mandates, co
 | Document | What is in it |
 |---|---|
 | [`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md) | Index for the data layer. Eight authoritative chapters under [`docs/database/`](docs/database/) — access patterns, entities, integrity, operations, decisions |
-| [`docs/architecture/01-stack.md`](docs/architecture/01-stack.md) | Language, runtime and framework decision — TypeScript for the application spine, Python for the AI/ML layer |
+| [`docs/architecture/01-stack.md`](docs/architecture/01-stack.md) | Language, runtime and framework decision — **Svelte + Laravel/PHP + Python** for AI/ML |
 
 Where the index and a chapter disagree, the chapter is right.
