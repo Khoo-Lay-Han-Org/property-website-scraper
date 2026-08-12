@@ -1,0 +1,39 @@
+{
+  "name": "my-better-t-app",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "check-types": "turbo run check-types",
+    "dev:web": "turbo run dev -F web",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "check": "ultracite check",
+    "fix": "ultracite fix",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@my-better-t-app/env": "workspace:*",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@my-better-t-app/config": "workspace:*",
+    "@types/node": "catalog:",
+    "husky": "latest",
+    "lefthook": "latest",
+    "oxfmt": "latest",
+    "oxlint": "latest",
+    "turbo": "^2.10.7",
+    "typescript": "catalog:",
+    "ultracite": "7.9.4"
+  },
+  "packageManager": "pnpm@10.30.3"
+}
