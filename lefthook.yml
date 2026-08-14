@@ -1,42 +1,54 @@
-# EXAMPLE USAGE:
+# Pre-commit gate across the three layers.
 #
-#   Refer for explanation to following link:
-#   https://lefthook.dev/configuration/
+# Requires the lefthook binary and a one-time install:
 #
-# pre-push:
-#   jobs:
-#     - name: packages audit
-#       tags:
-#         - frontend
-#         - security
-#       run: yarn audit
+#   brew install lefthook && lefthook install
 #
-#     - name: gems audit
-#       tags:
-#         - backend
-#         - security
-#       run: bundle audit
+# `root:` both changes directory and strips that prefix from
+# {staged_files}, which is what lets each app's own tooling run from a
+# monorepo root without path rewriting.
 #
-# pre-commit:
-#   parallel: true
-#   jobs:
-#     - run: yarn eslint {staged_files}
-#       glob: "*.{js,ts,jsx,tsx}"
+# Note the asymmetry: `glob:` is matched against the full repo-relative
+# path *before* the root prefix is stripped, while {staged_files} is
+# expanded *after*. A bare `*.php` matches at any depth, but a path-shaped
+# pattern must spell out the prefix — hence apps/web/resources/** below.
 #
-#     - name: rubocop
-#       glob: "*.rb"
-#       exclude:
-#         - config/application.rb
-#         - config/routes.rb
-#       run: bundle exec rubocop --force-exclusion -- {all_files}
-#
-#     - name: govet
-#       files: git ls-files -m
-#       glob: "*.go"
-#       run: go vet -- {files}
-#
-#     - script: "hello.js"
-#       runner: node
-#
-#     - script: "hello.go"
-#       runner: go run
+# Formatters and linters only — no test runs. `composer ci:check` (pest,
+# larastan, svelte-check) and `pytest` are CI's job; see
+# .github/workflows/tests.yml.
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: ruff
+      root: "apps/scraper/"
+      glob: "*.py"
+      run: uv run ruff check --fix {staged_files} && uv run ruff format {staged_files}
+      stage_fixed: true
+
+    - name: pint
+      root: "apps/web/"
+      glob: "*.php"
+      run: vendor/bin/pint {staged_files}
+      stage_fixed: true
+
+    # eslint.config.js already ignores generated output — resources/js/
+    # actions, routes and wayfinder, plus components/ui.
+    - name: eslint
+      root: "apps/web/"
+      glob: "*.{ts,js,svelte}"
+      run: pnpm exec eslint --fix --no-warn-ignored {staged_files}
+      stage_fixed: true
+
+    # Scoped to resources/ to match package.json's own `format` script.
+    # Widening it reformats Laravel Boost's generated output (CLAUDE.md,
+    # AGENTS.md, .agents/skills/**) and composer.json, all of which are
+    # rewritten by their own generators and would churn every commit.
+    #
+    # No conflict with eslint: eslint.config.js applies
+    # eslint-config-prettier/flat last, disabling every formatting rule.
+    - name: prettier
+      root: "apps/web/"
+      glob: "apps/web/resources/**/*.{ts,js,svelte,css}"
+      run: pnpm exec prettier --write {staged_files}
+      stage_fixed: true
