@@ -40,5 +40,5 @@ node_modules/
 .vscode/
 *.swp
 
-# --- n8n legacy (kept locally during parallel-run, not versioned) ---
-local-files/
+# --- n8n bind mount (local working files, not versioned) ---
+infra/n8n/local-files/

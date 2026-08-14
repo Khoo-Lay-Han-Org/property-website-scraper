@@ -1,3 +1,15 @@
+# Pinned explicitly. Compose otherwise derives the project name from this file's
+# directory, so moving the file here would silently rename the project to "n8n"
+# and start a second stack alongside the existing one.
+name: property-workspace
+
+# Credentials live in the repository-root .env, which is not this file's
+# directory, so ${VAR} interpolation needs the path passed in:
+#
+#   docker compose --env-file ../../.env -f docker-compose.yml up -d
+#
+# See infra/n8n/README.md.
+
 services:
   # traefik:
   #   image: "traefik"
