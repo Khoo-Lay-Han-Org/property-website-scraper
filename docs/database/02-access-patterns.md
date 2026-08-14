@@ -1,6 +1,6 @@
 # Access patterns & conventions
 
-*Part of [Database Schema](../../DATABASE_SCHEMA.md) — §3–§4. Chapter files are authoritative; the root index only summarises.*
+*Part of [Database Schema](../DATABASE_SCHEMA.md) — §3–§4. Chapter files are authoritative; the root index only summarises.*
 
 ---
 

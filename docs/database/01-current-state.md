@@ -1,6 +1,6 @@
 # Scope & current state
 
-*Part of [Database Schema](../../DATABASE_SCHEMA.md) — §1–§2. Chapter files are authoritative; the root index only summarises.*
+*Part of [Database Schema](../DATABASE_SCHEMA.md) — §1–§2. Chapter files are authoritative; the root index only summarises.*
 
 ---
 

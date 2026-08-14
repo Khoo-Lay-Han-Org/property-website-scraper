@@ -1,6 +1,6 @@
 # Views, triggers & denormalization
 
-*Part of [Database Schema](../../DATABASE_SCHEMA.md) — §11–§13. Chapter files are authoritative; the root index only summarises.*
+*Part of [Database Schema](../DATABASE_SCHEMA.md) — §11–§13. Chapter files are authoritative; the root index only summarises.*
 
 ---
 

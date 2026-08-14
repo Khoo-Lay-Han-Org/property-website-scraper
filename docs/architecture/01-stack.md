@@ -1,6 +1,6 @@
 # Stack decision — language, runtime & frameworks
 
-*Architecture chapter 01. Companion to [Database Schema](../../DATABASE_SCHEMA.md), which remains authoritative for everything about the data layer.*
+*Architecture chapter 01. Companion to [Database Schema](../DATABASE_SCHEMA.md), which remains authoritative for everything about the data layer.*
 
 | | |
 |---|---|
@@ -242,6 +242,8 @@ The starter kit is SSR-compatible out of the box, so the public surface requires
 3. **SQ-3 — Does the AI/ML layer talk to the database, or only to the application?** *In force:* only to the application; Python holds no database credentials and owns no domain logic. *Blast radius:* significant if it drifts. A second writer reintroduces the multi-process problem §16.2 names as binding — **and §3.5 item 2 means this stack is already closer to that line than the v1.x stack was.** Keep the Python layer stateless and credential-free unless explicitly revisited.
 
 4. **SQ-4 — What happens to `pyproject.toml` and `src/pw/`?** *In force:* `src/pw/api/` and `src/pw/db/` are deleted; `fastapi`, `uvicorn`, `pyturso` and `apscheduler` leave, and the `pw-api` script with them. `httpx`, `pydantic` and the `pw-scrape` script survive **if** the scraper stays Python (SQ-6). *Blast radius:* small and mechanical, but leaving it unchanged makes the repository state a false claim about the architecture. *Who answers:* mechanical; do it with the first Laravel commit.
+
+   > ⚠️ **PARTIALLY EXECUTED 2026-08-14 — the deletion is blocked, not forgotten.** The Python layer moved to `apps/scraper/` (`pyproject.toml`, `uv.lock`, `.python-version`, `src/`, `tests/`) with no edits; nothing was deleted and no dependency was dropped. **The blocker is that `src/pw/db/schema.sql` is the only V1 DDL that exists anywhere** — the live database carries the V0 shape (§2.2 of `01-current-state.md`) and no Laravel migration declares a domain table yet. `tests/test_schema.py` builds those seven tables plus `follow_up_inbox` in memory through the `turso` driver and asserts the inbox behaviour case by case; deleting `src/pw/db/` or dropping `pyturso` destroys both the DDL and its only test. **Unblocked by M1** (`06-operations.md` §17), which ports the schema to Laravel migrations. Execute SQ-4 in full at that point, not before.
 
 5. **SQ-5 — How are backend types kept in sync with Svelte?** *In force:* partially solved. The starter kit's **Wayfinder** covers *routes* type-safely at build time, and breaks the build when a referenced route disappears — a genuine drift check for that half. **It does not cover data shapes**, which is where §3.5 item 1's cost actually lands. *Blast radius:* grows silently on the uncovered half. The six `CHECK` enumerations and the `acquisition` discriminator are the specific values that will drift first, and a stale enum in a Svelte component produces a wrong dropdown rather than an error. **Whatever tool is chosen for model/DTO types (Spatie's typescript-transformer, or Scramble for OpenAPI), the generated file needs the same CI drift check Wayfinder gives routes for free.** *Who answers:* Vincent, before the first screen ships.
 

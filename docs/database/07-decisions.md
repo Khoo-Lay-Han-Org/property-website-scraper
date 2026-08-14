@@ -1,6 +1,6 @@
 # Decisions, open questions & changelog
 
-*Part of [Database Schema](../../DATABASE_SCHEMA.md) — §19–§21. Chapter files are authoritative; the root index only summarises.*
+*Part of [Database Schema](../DATABASE_SCHEMA.md) — §19–§21. Chapter files are authoritative; the root index only summarises.*
 
 ---
 

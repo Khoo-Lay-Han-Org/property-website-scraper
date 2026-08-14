@@ -1,6 +1,6 @@
 # Integrity & indexing
 
-*Part of [Database Schema](../../DATABASE_SCHEMA.md) — §8–§10. Chapter files are authoritative; the root index only summarises.*
+*Part of [Database Schema](../DATABASE_SCHEMA.md) — §8–§10. Chapter files are authoritative; the root index only summarises.*
 
 ---
 

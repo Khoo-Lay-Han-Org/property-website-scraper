@@ -1,6 +1,6 @@
 # Review v1.1.0 — defects, roadmap & cuts
 
-*Part of [Database Schema](../../DATABASE_SCHEMA.md) — §22–§24. Chapter files are authoritative; the root index only summarises.*
+*Part of [Database Schema](../DATABASE_SCHEMA.md) — §22–§24. Chapter files are authoritative; the root index only summarises.*
 
 ---
 

@@ -1,6 +1,6 @@
 # Entities & relationships
 
-*Part of [Database Schema](../../DATABASE_SCHEMA.md) — §5–§7. Chapter files are authoritative; the root index only summarises.*
+*Part of [Database Schema](../DATABASE_SCHEMA.md) — §5–§7. Chapter files are authoritative; the root index only summarises.*
 
 ---
 

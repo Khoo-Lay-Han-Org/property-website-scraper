@@ -1,6 +1,6 @@
 # Operations: PII, storage, scaling, migration
 
-*Part of [Database Schema](../../DATABASE_SCHEMA.md) — §14–§18. Chapter files are authoritative; the root index only summarises.*
+*Part of [Database Schema](../DATABASE_SCHEMA.md) — §14–§18. Chapter files are authoritative; the root index only summarises.*
 
 ---
 
