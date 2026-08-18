@@ -50,6 +50,12 @@ jobs:
           cache: pnpm
           cache-dependency-path: apps/web/pnpm-lock.yaml
 
+      # Peck (composer test:spelling) shells out to the aspell binary, which
+      # the runner image does not carry. Without this the whole ci:check
+      # chain dies at exit 127.
+      - name: Install aspell
+        run: sudo apt-get update && sudo apt-get install -y aspell aspell-en
+
       - name: Setup Application
         run: composer setup
 
