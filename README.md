@@ -20,37 +20,37 @@ Two deployables, three languages. The frontend is **not** a separate service: In
 
 ## Setup
 
-**Laravel** — needs PHP 8.4, Composer and pnpm:
+Prerequisites: PHP 8.4, Composer, pnpm, [uv](https://docs.astral.sh/uv/), Docker, and [`just`](https://just.systems) plus [`lefthook`](https://lefthook.dev) (`brew install just lefthook`).
 
 ```sh
-cd apps/web
-composer setup     # install, .env, key, migrate, pnpm install, build
-composer dev       # serve + vite + queue + logs
+just setup     # both apps, plus the git hooks
+just           # list every recipe
 ```
 
-**Python** — needs [uv](https://docs.astral.sh/uv/):
+`just` is a thin wrapper over each app's own tooling — composer scripts and uv — so it never needs to know what a gate does, only where to run it. Working directly in `apps/web` or `apps/scraper` remains equivalent.
 
-```sh
-cd apps/scraper
-uv sync --extra dev
-uv run pytest
-```
+| Recipe | What it does |
+|---|---|
+| `just dev` | Laravel serve + Vite + queue + log tail |
+| `just check` | Everything CI runs, both apps, in CI's order — the pre-push check |
+| `just test` | Test suites only, no linters |
+| `just types` | Type checkers only — larastan on PHP, `ty` on Python |
+| `just fmt` | Every formatter and autofixer across both apps |
+| `just artisan <cmd>` | An artisan command, without the `cd` |
+| `just n8n-up` / `n8n-down` / `n8n-logs` | n8n compose stack, with the mandatory `--env-file` already applied |
 
-**n8n** — credentials come from the repository-root `.env`, so the `--env-file` flag is mandatory:
+n8n reads its credentials from the repository-root `.env`; see [`infra/n8n/README.md`](infra/n8n/README.md).
 
-```sh
-cd infra/n8n
-docker compose --env-file ../../.env up -d
-```
+### Gates
 
-See [`infra/n8n/README.md`](infra/n8n/README.md).
+`lefthook` runs formatters only on staged files — ruff, pint, eslint, prettier. Everything that can fail slowly is CI's job (`.github/workflows/tests.yml`), and `just check` reproduces it locally:
 
-**Git hooks** — ruff, pint, eslint and prettier on staged files:
+| Layer | Gates |
+|---|---|
+| `apps/web` | pint, eslint, prettier, svelte-check, larastan level 7, rector, peck, pest — 100% type coverage, 90% line coverage |
+| `apps/scraper` | ruff lint, ruff format, [`ty`](https://github.com/astral-sh/ty), pytest with coverage |
 
-```sh
-brew install lefthook
-lefthook install
-```
+Coverage on the Python side is measured but not yet enforced: `src/pw` is scaffolding, so the floor in `pyproject.toml` stays at 0 until the scraper lands (SD-7/SQ-6).
 
 ## Documentation
 
