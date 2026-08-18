@@ -27,6 +27,12 @@ venv/
 dist/
 build/
 
+# coverage.py artifacts — pytest-cov writes .coverage on every run
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
 # --- node ---
 node_modules/
 .vite/
