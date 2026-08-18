@@ -1,0 +1,19 @@
+{
+    "preset": "laravel",
+    "ignore": {
+        "words": [
+            "eslint",
+            "js",
+            "nav",
+            "opencode",
+            "php",
+            "pnpm",
+            "ssr",
+            "tsconfig",
+            "utils"
+        ],
+        "paths": [
+            "resources/js/components/ui"
+        ]
+    }
+}
