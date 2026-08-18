@@ -1,0 +1,1931 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "model": "qwen3.5:9b",
+        "options": {
+          "think": true
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        128,
+        1600
+      ],
+      "id": "aa2133c1-14f6-4971-a6d3-ea128b9d7c51",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "29cpBosvXLsUfR0R",
+          "name": "Ollama account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1488,
+        560
+      ],
+      "id": "f6204710-4450-4584-b824-16f090688ce1",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Edit Fields – Set Variables').item.json.GOOGLE_SPREADSHEET_ID }}?fields=sheets.properties.title",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1488,
+        752
+      ],
+      "id": "55049578-f782-411b-bcd9-dba2b2492674",
+      "name": "HTTP Request – Check Google Sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sZJB2gEMeeNJ7uEC",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "04f67d16-d3d8-4e39-b6a7-8bd382840675",
+              "leftValue": "={{ $json.hasOwnProperty('error') }}",
+              "rightValue": "=",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1264,
+        624
+      ],
+      "id": "0fbd6364-5060-4703-88bd-b1e8d8be7652",
+      "name": "If – Is Error?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "04f67d16-d3d8-4e39-b6a7-8bd382840675",
+              "leftValue": "={{ $json.sheets }}",
+              "rightValue": "=",
+              "operator": {
+                "type": "boolean",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1712,
+        752
+      ],
+      "id": "3f733dbe-838e-4f3a-b52f-5e3f64276453",
+      "name": "If – Sheet Exists?"
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "title": "GT NELSON",
+        "sheetsUi": {
+          "sheetValues": [
+            {
+              "title": "={{ $('Edit Fields – Set Variables').item.json.SPREADSHEET_MUDAH_RENT_NAME }}"
+            },
+            {
+              "title": "={{ $('Edit Fields – Set Variables').item.json.SPREADSHEET_MUDAH_SALES_NAME }}"
+            },
+            {
+              "title": "IProperty/PropertyGuru (Rent)"
+            },
+            {
+              "title": "IProperty/PropertyGuru (Sales)"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1936,
+        848
+      ],
+      "id": "c7c5f26e-1248-43a8-97f5-83baf61eb7ec",
+      "name": "Google Sheets – Create New Spreadsheet",
+      "retryOnFail": false,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sZJB2gEMeeNJ7uEC",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node (JavaScript) — \"Run Once for All Items\"\n// Handles multiple site formats via a fallback chain:\n//   1. schema.org JSON-LD (iProperty and PropertyGuru) \n//   2. mudah.my's __NEXT_DATA__ format\n//   3. unhandled fallback (logs the URL)\n\nconst results = [];\n\nfunction sanitizeBody(text) {\n  return text\n    .replace(/<br\\s*\\/?>/gi, \"\\n\") // Convert <br> to newline\n    .replace(/<\\/?[^>]+>/g, \"\")    // Remove any remaining HTML tags\n    .replace(/\\n{3,}/g, \"\\n\\n\")    // Collapse excessive newlines\n    .trim();\n}\n\n// schema.org JSON-LD (iProperty / PropertyGuru)\nfunction extractSchemaOrg(html) {\n  const scriptMatches = [...html.matchAll(/<script type=\"application\\/ld\\+json\"[^>]*>(.*?)<\\/script>/gs)];\n\n  for (const match of scriptMatches) {\n    let data;\n    try {\n      data = JSON.parse(match[1]);\n    } catch (e) {\n      continue; // not valid JSON, try next script block\n    }\n\n    const graph = data['@graph'] || [data];\n\n    // Find the property entity — could be SingleFamilyResidence, Apartment,\n    // House, or generic \"Residence\" depending on property type.\n    const property = graph.find(item =>\n      item['@type'] && (\n        item['@type'].includes('Residence') ||\n        item['@type'] === 'House' ||\n        item['@type'] === 'Apartment'\n      )\n    );\n    if (!property) continue; // this JSON-LD block isn't the listing schema\n\n    const offer = graph.find(item => item['@type'] === 'Offer');\n    const agent = graph.find(item => item['@type'] === 'RealEstateAgent');\n\n    // const faq = graph.find(item => item['@type'] === 'FAQPage');\n    \n    const getAdditionalProp = (name) => {\n      const found = (property.additionalProperty || []).find(p => p.name === name);\n      return found ? found.value : '';\n    };\n\n    // Amenities\n    const facilitiesToString = (facilityFeature = []) => {\n      return facilityFeature\n      .filter(item_ => item_.value === true)\n      .map(item_ => item_.name)\n      .join(\", \");\n    };\n    \n    // console.log(graph);\n    \n    return {\n      title: property.name,\n      property_type: property.accommodationCategory || property['@type'],\n      price: offer ? offer.price : '',\n      location: property.address ? property.address.streetAddress : '',\n      size_sqft: property.floorSize ? property.floorSize.value : '',\n      bedrooms: property.numberOfBedrooms || '',\n      bathrooms: property.numberOfBathroomsTotal || '',\n      furnishing: getAdditionalProp('Furnishing'),\n      tenure: getAdditionalProp('Tenure'),\n      latitude: property.geo.latitude,\n      longitude: property.geo.longitude,\n      facilities: facilitiesToString(property.amenityFeature),\n      agent_name: agent ? agent.name : '',\n      agent_agency: agent && agent.memberOf ? agent.memberOf.name : '',\n      // NOTE: schema.org JSON-LD does not include phone numbers on this site —\n      // that's masked behind a \"View Phone Number\" click on iProperty.\n      phone: '',\n      listing_url: property.url || '',\n      // faq\n      strategy_used: 'schema_org',\n    };\n  }\n  return null;\n}\n\n// mudah.my's __NEXT_DATA__ \nfunction extractMudah(html) {\n  const match = html.match(/<script id=\"__NEXT_DATA__\" type=\"application\\/json\">(.*?)<\\/script>/s);\n  if (!match) return null;\n\n  let nextData;\n  try {\n    // console.log(\"DDWAD\");\n    nextData = JSON.parse(match[1]);\n    // console.log(nextData);\n  } catch (e) {\n    return null;\n  }\n\n  const adData = nextData.props?.initialProps?.pageProps?.res?.data?.[0];\n  if (!adData || !adData.attributes) return null; // not mudah's structure\n\n  const listing = adData.attributes;\n  const params = {};\n  (listing.category_params || []).forEach(p => { params[p.id] = p.value; });\n\n  // console.log(params);\n\n  // console.log(listing);\n  \n  return {\n    title: listing.subject,\n    advertisement_id: listing.ad_id || '',\n    property_type: params.property_type,\n    price: listing.price,\n    location: listing.location_label,\n    size_sqft: params.size,\n    category_id: params.category_id || '', // Probably category IDs for how the website configures their property ID system?\n    rooms: params.rooms || '', // Bedrooms\n    rental_deposit: params.rendepo || '',\n    // bedrooms: params.bedrooms || '',\n    bathrooms: params.bathroom || '',\n    parking: params.parking || '' ,\n    furnishing: params.furnished || '',\n    facilities: params.facilities || '',\n    add_facilities: params.additional_facilities || '',\n    floor_range: params.floor_range || '',\n    description: sanitizeBody(listing.body) || '',\n    tenure: params.tenure || '',\n    landlord_name: listing.name,\n    tenant_name: '',\n    phone: listing.phone,\n    listing_url: adData.links?.self || '',\n    strategy_used: 'mudah_next_data',\n  };\n}\n\nconsole.log(\"D23131312\");\nconsole.log($input.all());\n\n// ---------- Router ----------\nfor (const item of $input.all()) {\n  // adjust \"data\" to your HTTP Request output field$('Split Out – Retrieve Each Listings').first().json.url\n  const html = item.json.data || ''; \n  const sourceUrl = item.json.url || '';\n\n  console.log($('Code in JavaScript – Extract HTML To JSON Listings').first().json);\n  \n  let extracted = extractSchemaOrg(html);\n  \n  console.log(sourceUrl);\n  \n  if (!extracted) extracted = extractMudah(html);\n    \n  if (!extracted) {\n    results.push({\n      json: {\n        error: 'No known extraction strategy matched this page',\n        url: sourceUrl,\n      }\n    });\n    continue;\n  }\n\n  // Common post-processing regardless of which strategy matched\n  const priceNum = parseFloat(String(extracted.price).replace(/[^\\d.]/g, ''));\n  const sizeNum = parseFloat(String(extracted.size_sqft).replace(/[^\\d.]/g, ''));\n  const pricePerSqft = (priceNum && sizeNum) ? Math.round((priceNum / sizeNum) * 100) / 100 : null;\n\n  results.push({\n    json: {\n      ...extracted,\n      price_per_sqft: pricePerSqft,\n      // source_website: new URL(sourceUrl || extracted.listing_url || 'https://unknown')?.hostname,\n      date_scraped: new Date().toISOString(),\n      agent_name: $('Edit Fields – Set Variables').first().json.AGENT_NAME,\n      agent_agency: $('Edit Fields – Set Variables').first().json.AGENT_AGENCY,\n      contact_status: 'Not Contacted',\n      last_contact_date: '',\n      notes: '',\n      your_rating: '',\n      client_match: '',\n      target_sheet: extracted.strategy_used === 'mudah_next_data' ? 'mudah_my' : 'iproperty_propertyguru'\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        656
+      ],
+      "id": "f4af795a-6e96-4324-8f21-8be23be964bd",
+      "name": "Code in JavaScript – Extract HTML To JSON"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Edit Fields – Set Variables').item.json.GOOGLE_SPREADSHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "IProperty/PropertyGuru (Rent)",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "1",
+              "displayName": "1",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Residensi Rimbun @ Canopy Hills",
+              "displayName": "Residensi Rimbun @ Canopy Hills",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Service Residence",
+              "displayName": "Service Residence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Jalan Zamrud Utama, Bandar Teknologi Kajang, Kajang, Selangor",
+              "displayName": "Jalan Zamrud Utama, Bandar Teknologi Kajang, Kajang, Selangor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "180",
+              "displayName": "180",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Fully Furnished",
+              "displayName": "Fully Furnished",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Freehold",
+              "displayName": "Freehold",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "2.956959",
+              "displayName": "2.956959",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "101.79524",
+              "displayName": "101.79524",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Badminton hall, Cafes, Drop Off Point, Perimeter Fencing",
+              "displayName": "Badminton hall, Cafes, Drop Off Point, Perimeter Fencing",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Phoebe Wong",
+              "displayName": "Phoebe Wong",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "IQI REALTY SDN. BHD.   [ E (1) 1584 ]",
+              "displayName": "IQI REALTY SDN. BHD.   [ E (1) 1584 ]",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "https://www.propertyguru.com.my/property-listing/residensi-rimbun-canopy-hills-for-rent-by-phoebe-wong-501694578",
+              "displayName": "https://www.propertyguru.com.my/property-listing/residensi-rimbun-canopy-hills-for-rent-by-phoebe-wong-501694578",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "schema_org",
+              "displayName": "schema_org",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "2.22",
+              "displayName": "2.22",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "2026-07-25T23:50:14.577Z",
+              "displayName": "2026-07-25T23:50:14.577Z",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Not Contacted",
+              "displayName": "Not Contacted",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "locationDefine": {
+            "values": {
+              "headerRow": 2
+            }
+          },
+          "useAppend": true
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2384,
+        848
+      ],
+      "id": "1933007b-884c-4d0f-97ba-61bbc2ed70c6",
+      "name": "Google Sheet – Append IProperty/PropertyGuru (Rent)",
+      "retryOnFail": false,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sZJB2gEMeeNJ7uEC",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Split Out – Retrieve Each Listings').item.json.url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        256,
+        144
+      ],
+      "id": "ba47734b-74f0-412c-a45b-76c4cd4ef01c",
+      "name": "HTTP Request – Retrieve Listing"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.PUBLIC_MUDAH_RENT_URL }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -1216,
+        656
+      ],
+      "id": "45f8d465-086b-4f38-bed6-d5296e99d3bb",
+      "name": "HTTP Request – Retrieve All Listings"
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = [];\n\nfor (const item of $input.all()) {\n  const html = item.json.data || \"\";\n\n  const match = html.match(/<script id=\"__NEXT_DATA__\" type=\"application\\/json\">(.*?)<\\/script>/s);\n\n  if (!match) {\n    results.push({ json: { error: \"NEXT_DATA not found on search page\", url: item.json.url || \"\" } });\n    continue;\n  }\n\n  let nextData;\n  try {\n    nextData = JSON.parse(match[1]);\n  } catch (e) {\n    results.push({ json: { error: \"Failed to parse NEXT_DATA JSON\", url: item.json.url || \"\" } });\n    continue;\n  }\n\n  const resObj = nextData.props?.pageProps?.initialStore || {};\n  const adsArray = resObj.ads || [];\n\n  // console.log(adsArray);\n  \n  if (!Array.isArray(adsArray) || adsArray.length === 0) {\n    results.push({ json: { error: \"No ads array found — check the real JSON structure\", url: item.json.url || \"\" } });\n    continue;\n  }\n\n  // Extract a lightweight preview + URL for each ad on this page\n  const listingUrls = adsArray.map(ad => ({\n    url: ad.attributes?.adviewUrl || null,\n    title: ad.attributes?.subject || null,\n    price: ad.attributes?.priceAlias || null,\n    ad_id: ad.attributes?.listId || null,\n  })).filter(l => l.url); // drop any without a usable URL\n\n  // Search results usually expose total count and/or a next-page indicator somewhere in meta. Adjust once confirmed.\n  // const meta = resObj.meta || {};\n  // const currentPage = meta.current_page || null;\n  // const totalPages = meta.total_pages || meta.last_page || null;\n  // const hasNextPage = totalPages ? (currentPage < totalPages) : null;\n\n  results.push({\n    json: {\n      source_page_url: item.json.url || \"\",\n      listings_found: listingUrls.length,\n      listing_urls: listingUrls,\n      // current_page: currentPage,\n      // total_pages: totalPages,\n      // has_next_page: hasNextPage,\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -992,
+        656
+      ],
+      "id": "a39b6274-0be4-4a4c-a7fe-defda91d94c6",
+      "name": "Code in JavaScript – Extract HTML To JSON Listings"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1664,
+        560
+      ],
+      "id": "59f54707-e3af-415a-87a2-cb83fae8cc91",
+      "name": "Start Workflow Execution",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6b6d6887-1c0a-4f95-ad97-0baa8c084b0e",
+              "name": "GOOGLE_SPREADSHEET_ID",
+              "value": "18Ewtyq_A7_DfgFekEVb0gRdD-qVA5drVYcOUWBBiTts",
+              "type": "string"
+            },
+            {
+              "id": "703a6298-dcdc-48b3-9b47-58cb149fdc33",
+              "name": "GOOGLE_SPREADSHEET_URL",
+              "value": "=https://sheets.googleapis.com/v4/spreadsheets/18Ewtyq_A7_DfgFekEVb0gRdD-qVA5drVYcOUWBBiTts?fields=sheets.properties.title",
+              "type": "string"
+            },
+            {
+              "id": "57ccc71d-122f-4b30-b8fd-78d54dd275bb",
+              "name": "PUBLIC_MUDAH_RENT_URL",
+              "value": "https://www.mudah.my/selangor-kajang/properties-for-rent?adsby=false",
+              "type": "string"
+            },
+            {
+              "id": "1a83241d-7f73-4178-b09a-662b471c5295",
+              "name": "PUBLIC_PROPERTYGURU_RENT_URL",
+              "value": "https://www.propertyguru.com.my/property-for-rent?listingType=rent&page=1&districtCode=crp6q&isCommercial=false&regionCode=45nk1&_freetextDisplay=Kajang%2C+Selangor",
+              "type": "string"
+            },
+            {
+              "id": "21ae4fb6-2000-49ba-bd33-4c9b05abc2af",
+              "name": "PUBLIC_IPROPERTY_RENT_URL",
+              "value": "https://www.iproperty.com.my/property-for-rent/2?page=1&districtCode=crp6q&isCommercial=false&regionCode=45nk1&_freetextDisplay=Kajang%2C+Selangor&isDiversityFriendly=true",
+              "type": "string"
+            },
+            {
+              "id": "4ac8f2d3-3899-42b3-806c-5d66266078b7",
+              "name": "AGENT_NAME",
+              "value": "Vincent Khoo",
+              "type": "string"
+            },
+            {
+              "id": "a8111a4b-ef2b-4980-a352-313e88ee29d5",
+              "name": "AGENT_AGENCY",
+              "value": "GT Nelson Realty Sdn. Bhd.",
+              "type": "string"
+            },
+            {
+              "id": "9fb965c2-5133-42c4-b41e-cf9843407866",
+              "name": "SPREADSHEET_MUDAH_RENT_NAME",
+              "value": "Mudah.my (Rent)",
+              "type": "string"
+            },
+            {
+              "id": "8356cc80-d3a8-4dac-9f5f-63bc5d3eb39b",
+              "name": "SPREADSHEET_MUDAH_SALES_NAME",
+              "value": "Mudah.my (Sales)",
+              "type": "string"
+            },
+            {
+              "id": "ea62f388-39b0-4159-9212-5efb492fc863",
+              "name": "SPREADSHEET_IPROPERTY_RENT_NAME",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "91d647fc-17ce-4bc3-a279-f8dc1675449d",
+              "name": "SPREADSHEET_IPROPERTY_SALES_NAME",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "7a3c8465-44eb-4f67-860f-620f63a712df",
+              "name": "SPREADSHEET_PROPERTYGURU_RENT_NAME",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "c1c80f4d-b2c5-48b1-90a9-aa114ef75b77",
+              "name": "SPREADSHEET_PROPERTYGURU_SALES_NAME",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1440,
+        656
+      ],
+      "id": "774fa299-b0c8-481d-93a1-5f231ea679a9",
+      "name": "Edit Fields – Set Variables"
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -544,
+        656
+      ],
+      "id": "dacb2adc-e725-4ff1-ac60-d55685adbaad",
+      "name": "Loop Over All Listings",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "listing_urls",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -768,
+        656
+      ],
+      "id": "9874514f-593e-4ee9-8344-62ff89307fb2",
+      "name": "Split Out – Retrieve Each Listings",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1664,
+        752
+      ],
+      "id": "63452d26-e50e-495f-a54c-ac68005f52cc",
+      "name": "Schedule Trigger – 1 Day Interval At 12 AM"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Code in JavaScript – Extract HTML To JSON').item.json.target_sheet }}",
+                    "rightValue": "mudah_my",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "12f8323d-3d49-44a0-8b0c-00b98afd30f8"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "mudah-my"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "0d49fbef-7211-41fd-8452-76ec5d1af47a",
+                    "leftValue": "={{ $('Code in JavaScript – Extract HTML To JSON').item.json.target_sheet }}",
+                    "rightValue": "iproperty_propertyguru",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "iproperty-propertyguru"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2160,
+        752
+      ],
+      "id": "37af5076-54cb-448f-af48-da1859627639",
+      "name": "Switch – Google Sheets"
+    },
+    {
+      "parameters": {
+        "model": "qwen3.5:9b",
+        "options": {
+          "think": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmOllama",
+      "typeVersion": 1,
+      "position": [
+        192,
+        848
+      ],
+      "id": "76cdd9dc-de0f-4d73-9888-44413a7564bc",
+      "name": "Ollama Model",
+      "notesInFlow": false,
+      "credentials": {
+        "ollamaApi": {
+          "id": "29cpBosvXLsUfR0R",
+          "name": "Ollama account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"rating\": {\n      \"type\": \"number\",\n      \"minimum\": 0,\n      \"maximum\": 5,\n      \"description\": \"Score from 0.0 to 5.0 indicating lead quality based on location, price, and contact directness.\"\n    },\n    \"reason\": {\n      \"type\": \"string\",\n      \"description\": \"A single short sentence explaining the rating.\"\n    },\n    \"outreach_message\": {\n      \"type\": \"string\",\n      \"description\": \"A friendly, casual WhatsApp message from the agent referencing the unit, price, and location.\"\n    }\n  },\n  \"required\": [\"rating\", \"reason\", \"outreach_message\"],\n  \"additionalProperties\": false\n}   "
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        320,
+        848
+      ],
+      "id": "0d8de7e8-a8f5-4b42-aff0-d8fd681a0776",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Given this listing:\nTitle: {{ $json.title }}\nPrice: {{ $json.price }}\nLocation: {{ $json.location }}\nFurnishing: {{ $json.furnishing }}\nLandlord name: {{ $json.landlord_name }}\nSize: {{ $json.size_sqft }} sqft\n\nReturn ONLY valid JSON:\n{\n  \"rating\": \"<0.0-5.0, how good a lead this is for a property agent, considering location desirability, price competitiveness, and directness of contact>\",\n  \"reason\": \"<one short sentence explaining the rating>\",\n  \"outreach_message\": \"<a short, friendly first-contact WhatsApp message from {{ $json.agent_name }} at {{ $json.agent_agency }}, addressed to the listing's contact by name if known, referencing the specific unit, price, and location, asking if it's still available. Match the tone of a professional real estate agent reaching out casually, not a sales pitch.>\"\n}",
+        "hasOutputParser": true,
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        192,
+        624
+      ],
+      "id": "a554e385-4112-41ce-b043-87454cf4fe4e",
+      "name": "Basic LLM Chain – AI Scoring & Outreach Message",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are reviewing a new property listing before it's added to a lead tracker database.\n\nNew listing:\nTitle: \"{{ $('Loop Over All Listings 2').item.json.title }}\"\nPrice: \"{{ $('Loop Over All Listings 2').item.json.price }}\"\nLocation: \"{{ $('Loop Over All Listings 2').item.json.location }}\"\nPhone: \"{{ $('Loop Over All Listings 2').item.json.phone }}\"\nLandlord/Agent Name: \"{{ $('Loop Over All Listings 2').item.json.landlord_name\n}}\"\n\nUse your database query tool to run SQL against the \"listings\" table to check for:\n- Matching or near-matching phone numbers, titles, or locations (possible duplicate)\n- Signs this listing is a scam: unrealistic price for the area, conflicting details\n  in the available fields, fake urgency language (\"must sell today\"), reused contact\n  numbers across unrelated listings, or a location that doesn't plausibly exist.\n\nReturn ONLY valid JSON:\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"scam_score\": {\n      \"type\": \"integer\",\n      \"minimum\": 0,\n      \"maximum\": 100,\n      \"description\": \"Confidence score (0-100) that the listing is suspicious.\"\n    },\n    \"scam_reasons\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\",\n        \"description\": \"A short reason explaining why the listing is suspicious.\"\n      },\n      \"description\": \"List of reasons supporting the scam score.\"\n    },\n    \"duplicate_score\": {\n      \"type\": \"integer\",\n      \"minimum\": 0,\n      \"maximum\": 100,\n      \"description\": \"Confidence score (0-100) that this is a duplicate of an existing row.\"\n    },\n    \"duplicate_advertisement_id\": {\n      \"type\": \"string\",\n      \"description\": \"The listing_id of the matching row, or null if no duplicate is found.\"\n    }\n  },\n  \"required\": [\"scam_score\", \"scam_reasons\", \"duplicate_score\", \"duplicate_advertisement_id\"],\n  \"additionalProperties\": false\n}   ",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        192,
+        1376
+      ],
+      "id": "c9da7e2d-0b66-4c65-b3a7-6aa0cf31ea8f",
+      "name": "AI Agent – Scam & Duplicate Entry Detection"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        816,
+        64
+      ],
+      "id": "3312dda6-dc37-445c-9365-55a777f80c61",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "method": "=POST",
+        "url": "https://property-websites-webscraper-vincent-khoo.aws-ap-northeast-1.turso.io/v2/pipeline",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODUyOTIxNjMsImlkIjoiMDE5ZmFiYjMtZjUwMS03ODhhLTk1YWEtNmU3MjE0NzQxMjFhIiwia2lkIjoianVhQWROT0JURmFQZnNDZXRzYVRZc0h6ZkNmRjl6UUpZeER3Wkp3UGRaQSIsInJpZCI6IjNmMmZkNjM5LTUxNTYtNDE2MS05NjQ1LWIyMTdkYTgwMDU3YyJ9.NGriDB0FKXkKnRMKo4-pLkEIOk7AhsZga4p6hRVY2tM_zdKcauChxJBIdwRHn_GogbrSTY66MeKjMD2CutF9CQ"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"requests\": [\n    { \n      \"type\": \"execute\", \n      \"stmt\": { \n        \"sql\": \"SELECT * FROM listings WHERE advertisement_id = ? OR phone = ?\", \n        \"args\": [\n          {\n            \"type\": \"text\", \n            \"value\": \"{{ $('Code in JavaScript – Extract HTML To JSON').item.json.advertisement_id }}\"\n          },\n          {\n            \"type\": \"text\", \n            \"value\": \"{{ $('Code in JavaScript – Extract HTML To JSON').item.json.phone }}\"\n          }\n        ] \n      } \n    },\n    { \n      \"type\": \"close\" \n    }\n  ]\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.4,
+      "position": [
+        256,
+        1600
+      ],
+      "id": "f576f010-c851-448b-83c3-d42a8b1d38f0",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://property-websites-webscraper-vincent-khoo.aws-ap-northeast-1.turso.io/v2/pipeline",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODUyOTIxNjMsImlkIjoiMDE5ZmFiYjMtZjUwMS03ODhhLTk1YWEtNmU3MjE0NzQxMjFhIiwia2lkIjoianVhQWROT0JURmFQZnNDZXRzYVRZc0h6ZkNmRjl6UUpZeER3Wkp3UGRaQSIsInJpZCI6IjNmMmZkNjM5LTUxNTYtNDE2MS05NjQ1LWIyMTdkYTgwMDU3YyJ9.NGriDB0FKXkKnRMKo4-pLkEIOk7AhsZga4p6hRVY2tM_zdKcauChxJBIdwRHn_GogbrSTY66MeKjMD2CutF9CQ"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"requests\": [\n        {\n            \"type\": \"execute\",\n            \"stmt\": {\n                \"sql\": \"INSERT INTO listings (advertisement_id, listing_title, property_type, price, price_per_sqft, size_sqft, bedrooms, bathrooms, furnishing, tenure, floors, car_parks, facilities, full_address, area, latitude, longitude, website, listing_url, listing_date, scraped_date, owner_name, agent_name, agent_agency, phone, contact_status, last_contact, viewing_date, remarks, summary, rating, rating_reason, scam_score, scam_reasons, duplicate_confidence, outreach_message, client_match, strategy_used, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\",\n                \"args\": [\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.listing_id }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.listing_title }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.property_type }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.price }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.price_per_sqft }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.size_sqft }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.bedrooms }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.bathrooms }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.furnishing }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.tenure }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.floor }}\"\n                    },\n                    {\n                        \"type\": \"text\", \"value\": \"{{ $json.car_parks }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.facilities }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.full_address }}\"\n                    },\n                    {\n                        \"type\": \"text\", \n                        \"value\": \"{{ $json.area }}\"\n                    },\n                    {\n                        \"type\": \"text\", \n                        \"value\": \"{{ $json.latitude }}\"\n                    },\n                    {\n                        \"type\": \"text\", \n                        \"value\": \"{{ $json.longitude }}\"\n                    },\n                    {\n                        \"type\": \"text\", \n                        \"value\": \"{{ $json.website }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.listing_url }}\"\n                    },\n                    {\n                        \"type\": \"text\", \n                        \"value\": \"{{ $json.listing_date }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.scraped_date }}\"\n                    },\n                    {\n                        \"type\": \"text\", \n                        \"value\": \"{{ $json.owner_name }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.agent_name }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.agent_agency }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.phone }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.contact_status }}\"\n                    },\n                    {\n                        \"type\": \"text\", \n                        \"value\": \"{{ $json.last_contact }}\"\n                    },\n                    {\n                        \"type\": \"text\", \n                        \"value\": \"{{ $json.viewing_date }}\"\n                    },\n                    {\n                        \"type\": \"text\", \n                        \"value\": \"{{ $json.remarks }}\"\n                    },\n                    {\n                        \"type\": \"text\", \n                        \"value\": \"{{ $json.summary }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.rating }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.rating_reason }}\"\n                    },\n                    {\n                        \"type\": \"text\", \n                        \"value\": \"{{ $json.scam_score }}\"\n                    },\n                    {\n                        \"type\": \"text\", \n                        \"value\": \"{{ $json.scam_reasons }}\"\n                    },\n                    {\n                        \"type\": \"text\", \n                        \"value\": \"{{ $json.duplicate_confidence }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.outreach_message }}\"\n                    },\n                    {\n                        \"type\": \"text\", \n                        \"value\": \"{{ $json.client_match }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.strategy_used }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.created_date }}\"\n                    },\n                    {\n                        \"type\": \"text\",\n                        \"value\": \"{{ $json.updated_date }}\"\n                    }\n                ]\n            }\n        },\n        {\n            \"type\": \"close\"\n        }\n    ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1072,
+        608
+      ],
+      "id": "e1432781-2dbb-4b62-bc22-3bbdf4f0877e",
+      "name": "HTTP Request3",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://property-websites-webscraper-vincent-khoo.aws-ap-northeast-1.turso.io/v2/pipeline",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODUyOTIxNjMsImlkIjoiMDE5ZmFiYjMtZjUwMS03ODhhLTk1YWEtNmU3MjE0NzQxMjFhIiwia2lkIjoianVhQWROT0JURmFQZnNDZXRzYVRZc0h6ZkNmRjl6UUpZeER3Wkp3UGRaQSIsInJpZCI6IjNmMmZkNjM5LTUxNTYtNDE2MS05NjQ1LWIyMTdkYTgwMDU3YyJ9.NGriDB0FKXkKnRMKo4-pLkEIOk7AhsZga4p6hRVY2tM_zdKcauChxJBIdwRHn_GogbrSTY66MeKjMD2CutF9CQ"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"requests\": [\n    { \n      \"type\": \"execute\", \n      \"stmt\": { \n        \"sql\": \"SELECT * FROM listings WHERE advertisement_id = ? OR phone = ?\", \n        \"args\": [\n          {\n            \"type\": \"text\", \n            \"value\": \"{{ $json.advertisement_id }}\"\n          },\n          {\n            \"type\": \"text\", \n            \"value\": \"{{ $json.phone }}\" \n          }\n        ] \n      } \n    },\n    { \n      \"type\": \"close\" \n    }\n  ]\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -320,
+        144
+      ],
+      "id": "4c086679-4abe-4da8-aa00-98e783153c60",
+      "name": "HTTP Request – Retrieve All Listings From DB"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "037194ed-d8ac-49e6-a5d9-43114423e0c0",
+              "leftValue": "={{ $json.results[0].response.result.rows.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            },
+            {
+              "id": "306416e0-af0d-4f56-885c-40ad7b9191e8",
+              "leftValue": "={{ $('HTTP Request – Retrieve Listing').item.json.data }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        592,
+        144
+      ],
+      "id": "d8abc2f1-8854-4f6e-9490-dfc327be38b4",
+      "name": "If – Is Found?"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -96,
+        656
+      ],
+      "id": "b59fb892-2d87-416a-b6ad-a293c031a36c",
+      "name": "Loop Over All Listings 2"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"scam_score\": {\n      \"type\": \"integer\",\n      \"minimum\": 0,\n      \"maximum\": 100,\n      \"description\": \"Confidence score (0-100) that the listing is suspicious.\"\n    },\n    \"scam_reasons\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\",\n        \"description\": \"A short reason explaining why the listing is suspicious.\"\n      },\n      \"description\": \"List of reasons supporting the scam score.\"\n    },\n    \"duplicate_score\": {\n      \"type\": \"integer\",\n      \"minimum\": 0,\n      \"maximum\": 100,\n      \"description\": \"Confidence score (0-100) that this is a duplicate of an existing row.\"\n    },\n    \"duplicate_advertisement_id\": {\n      \"type\": \"string\",\n      \"description\": \"The listing_id of the matching row, or null if no duplicate is found.\"\n    }\n  },\n  \"required\": [\"scam_score\", \"scam_reasons\", \"duplicate_score\", \"duplicate_advertisement_id\"],\n  \"additionalProperties\": false\n}   "
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        384,
+        1600
+      ],
+      "id": "868bea6a-1a87-4d57-9bfb-0f71971a894c",
+      "name": "Structured Output Parser1",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node (JavaScript) — \"Run Once for Each Item\"\n// Builds a Turso HTTP API INSERT request for the full listings schema,\n// with every value bound as a parameter (never string-concatenated into\n// the SQL itself — this is what keeps it injection-safe).\n// Output feeds directly into an HTTP Request node's Body field.\n\nconst record = $input.first().json;\n\n// Helper: wraps a value in Turso's required { type, value } shape.\n// Turso's \"value\" must always be sent as a string (even for numbers),\n// with \"type\" telling it how to interpret that string.\nfunction arg(value, type = \"text\") {\n  if (value === null || value === undefined || value === \"\") {\n    return { type: \"null\" };\n  }\n  return { type, value: String(value) };\n}\n\nconst columns = [\n  \"advertisement_id\", \"listing_title\", \"property_type\", \"price\", \"price_per_sqft\",\n  \"size_sqft\", \"bedrooms\", \"bathrooms\", \"furnishing\", \"tenure\", \"floor\",\n  \"car_parks\", \"facilities\", \"full_address\", \"area\", \"latitude\", \"longitude\",\n  \"website\", \"listing_url\", \"listing_date\", \"scraped_date\", \"owner_name\",\n  \"agent_name\", \"agent_agency\", \"phone\", \"contact_status\", \"last_contact\",\n  \"viewing_date\", \"remarks\", \"summary\", \"rating\", \"rating_reason\",\n  \"scam_score\", \"scam_reasons\", \"duplicate_confidence\",\n  \"outreach_message\", \"client_match\", \"strategy_used\", \"created_date\", \"updated_date\",\n];\n\n// Numeric columns get typed as \"integer\" or \"float\"; everything else defaults to \"text\"\nconst numericIntegerCols = [\"bedrooms\", \"bathrooms\", \"car_parks\", \"scam_score\", \"duplicate_confidence\"];\nconst numericFloatCols = [\"price\", \"price_per_sqft\", \"size_sqft\", \"latitude\", \"longitude\", \"rating\"];\n\nconst placeholders = columns.map(() => \"?\").join(\", \");\nconst sql = `INSERT INTO listings (${columns.join(\", \")}) VALUES (${placeholders})`;\n\nconst args = columns.map((col) => {\n  const value = record[col];\n  if (numericIntegerCols.includes(col)) return arg(value, \"integer\");\n  if (numericFloatCols.includes(col)) return arg(value, \"float\");\n  return arg(value, \"text\");\n});\n\nconst body = {\n  requests: [\n    { type: \"execute\", stmt: { sql, args } },\n    { type: \"close\" },\n  ],\n};\n\nreturn [{\n  json: {\n    ...record,\n    turso_request_body: JSON.stringify(body),\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        624
+      ],
+      "id": "5bb43b86-4448-487c-b299-b03025fbdf44",
+      "name": "Code in JavaScript – Handle HTTP Response INSERT Query"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node (JavaScript) — \"Run Once for Each Item\"\n// Merges three upstream sources into one clean record:\n//   1. Scraped + parsed listing data (from your site-router Code node)\n//   2. Basic LLM Chain output: { rating, reason, outreach_message }\n//   3. AI Agent output: { scam_score, scam_reasons, duplicate_score, duplicate_of_ad_id }\n//\n// Adjust the node names in $('...') below to match your actual node names in the canvas.\n\nconst scraped = $('Code in JavaScript – Extract HTML To JSON').first().json;\n// console.log(scraped);\n\nlet llmResult = {};\nconst rawLlm = $input.first().json.output;\n//   console.log(\"DWADA\");\n//   console.log($input.first());\n// console.log($input.first().json);\n\ntry {\n  const rawLlm = $input.first().json.output;\n  // console.log(\"DWADA\");\n  // console.log(rawLlm);\n  llmResult = rawLlm;\n} catch (e) {\n  llmResult = { rating: null, reason: '', outreach_message: '' };\n}\n\nlet agentResult = {};\ntry {\n  const rawAgent = $('AI Agent – Scam & Duplicate Entry Detection').first().json.output || '{}';\n  // agentResult = JSON.parse(rawAgent);\n  agentResult = rawAgent;\n} catch (e) {\n  agentResult = { scam_score: null, scam_reasons: [], duplicate_score: null, duplicate_of_ad_id: null };\n}\n\nconst nowIso = new Date().toISOString();\n\nconst merged = {\n  // Identity / dedup key\n  listing_id: scraped.advertisement_id || '',\n\n  // Listing basics\n  listing_title: scraped.title || '',\n  property_type: scraped.property_type || '',\n  price: parseFloat(String(scraped.price || '').replace(/[^\\d.]/g, '')) || null,\n  price_per_sqft: scraped.price_per_sqft ?? null,\n  size_sqft: parseFloat(String(scraped.size_sqft || '').replace(/[^\\d.]/g, '')) || null,\n  bedrooms: llmResult.bedrooms ?? scraped.bedrooms ?? null, // prefer LLM-normalized value if present\n  bathrooms: llmResult.bathrooms ?? scraped.bathrooms ?? null,\n  furnishing: scraped.furnishing || '',\n  tenure: scraped.tenure || '',\n  floor: scraped.floor || '',\n  car_parks: scraped.car_parks ?? null,\n  facilities: Array.isArray(scraped.facilities) ? JSON.stringify(scraped.facilities) : (scraped.facilities || ''),\n\n  // Location\n  full_address: scraped.location || scraped.full_address || '',\n  area: scraped.area || '',\n  latitude: scraped.latitude ?? null,\n  longitude: scraped.longitude ?? null,\n\n  // Source & tracking\n  website: scraped.source_website || '',\n  listing_url: scraped.listing_url || '',\n  listing_date: scraped.date_listed || '',\n  scraped_date: scraped.date_scraped || nowIso,\n\n  // Contacts\n  owner_name: scraped.owner_name || '',\n  agent_name: scraped.agent_name || '',\n  agent_agency: scraped.agent_agency || '',\n  phone: scraped.phone || '',\n\n  // Outreach / pipeline — new rows always start here\n  contact_status: 'Not Contacted',\n  last_contact: '',\n  viewing_date: '',\n  remarks: '',\n\n  // AI-generated fields\n  summary: llmResult.summary || '',\n  rating: llmResult.rating ?? null,\n  rating_reason: llmResult.reason || '',\n  scam_score: agentResult.scam_score ?? null,\n  scam_reasons: Array.isArray(agentResult.scam_reasons) ? agentResult.scam_reasons.join('; ') : '',\n  duplicate_confidence: agentResult.duplicate_score ?? null,\n  duplicate_of_ad_id: agentResult.duplicate_of_ad_id || '',\n  outreach_message: llmResult.outreach_message || '',\n  client_match: '',\n  strategy_used: scraped.strategy_used || '',\n\n  // Timestamps\n  created_date: nowIso,\n  updated_date: nowIso,\n};\n\nreturn [{ json: merged }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        624
+      ],
+      "id": "7836d109-19a4-40b3-8bac-c21f5820d0c9",
+      "name": "Code in JavaScript – Extract HTML To JSON Final"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        256,
+        336
+      ],
+      "id": "89554612-55e7-47c5-8e50-0502abad1ce9",
+      "name": "No Operation, do nothing1"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -96,
+        144
+      ],
+      "id": "5ebd33c9-9aea-4c29-a49e-5b11bf7b7542",
+      "name": "Wait – 10 seconds",
+      "webhookId": "24ffd093-0f8b-4e66-8b2e-881a02a8f4f4"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        816,
+        304
+      ],
+      "id": "b47e8163-76bd-48ca-a693-d79934d28d8c",
+      "name": "Wait – 10 seconds1",
+      "webhookId": "24ffd093-0f8b-4e66-8b2e-881a02a8f4f4"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2832,
+        848
+      ],
+      "id": "a3b4832c-0a0e-4be1-8a6d-767adf261ac8",
+      "name": "Wait – 10 seconds2",
+      "webhookId": "24ffd093-0f8b-4e66-8b2e-881a02a8f4f4"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0ea93986-0b7d-4801-8ac7-72d3b91d3cce",
+              "name": "listing_id",
+              "value": "={{ $('Code in JavaScript – Handle HTTP Response INSERT Query').item.json.listing_id }}",
+              "type": "string"
+            },
+            {
+              "id": "2bea4fa4-4a43-4f78-b0ff-6f2229900c07",
+              "name": "listing_title",
+              "value": "={{ $('Code in JavaScript – Handle HTTP Response INSERT Query').item.json.listing_title }}",
+              "type": "string"
+            },
+            {
+              "id": "382c219a-268a-4bfd-8d94-70562510da30",
+              "name": "property_type",
+              "value": "={{ $('Code in JavaScript – Handle HTTP Response INSERT Query').item.json.property_type }}",
+              "type": "string"
+            },
+            {
+              "id": "6da21d02-a6f8-4e07-9fd2-b502a2ede989",
+              "name": "price",
+              "value": "={{ $('Code in JavaScript – Handle HTTP Response INSERT Query').item.json.price }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2384,
+        656
+      ],
+      "id": "07f2dd99-2a0c-4fb3-960a-3c8065fd36ec",
+      "name": "Edit Fields – Set Variables1"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "=18Ewtyq_A7_DfgFekEVb0gRdD-qVA5drVYcOUWBBiTts",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "314433280",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Advertisement ID": "={{ $json.listing_id }}",
+            "Listing Title": "={{ $json.listing_title }}",
+            "Property Type": "={{ $json.property_type }}",
+            "Price": "={{ $json.price }}",
+            "Price Per Square Feet": "={{ $('If – Is Error?').item.json.price_per_sqft }}",
+            "Size (sq. ft.)": "={{ $('If – Is Error?').item.json.size_sqft }}",
+            "Bedrooms": "={{ $('If – Is Error?').item.json.bedrooms }}",
+            "Bathrooms": "={{ $('If – Is Error?').item.json.bathrooms }}",
+            "Furnishing": "={{ $('If – Is Error?').item.json.furnishing }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "No.",
+              "displayName": "No.",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Advertisement ID",
+              "displayName": "Advertisement ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Listing Title",
+              "displayName": "Listing Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Property Type",
+              "displayName": "Property Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Price",
+              "displayName": "Price",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Price Per Square Feet",
+              "displayName": "Price Per Square Feet",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Size (sq. ft.)",
+              "displayName": "Size (sq. ft.)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Bedrooms",
+              "displayName": "Bedrooms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Bathrooms",
+              "displayName": "Bathrooms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Furnishing",
+              "displayName": "Furnishing",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tenure",
+              "displayName": "Tenure",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Floors",
+              "displayName": "Floors",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Car Parks",
+              "displayName": "Car Parks",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Facilities",
+              "displayName": "Facilities",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Area",
+              "displayName": "Area",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Full Address",
+              "displayName": "Full Address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Latitude",
+              "displayName": "Latitude",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Longitude",
+              "displayName": "Longitude",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Website",
+              "displayName": "Website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Listing Url",
+              "displayName": "Listing Url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Listing Date",
+              "displayName": "Listing Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Scrapped Date",
+              "displayName": "Scrapped Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Owner Name",
+              "displayName": "Owner Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Agent Name",
+              "displayName": "Agent Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Agent Agency",
+              "displayName": "Agent Agency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Contact Status",
+              "displayName": "Contact Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Last Contact",
+              "displayName": "Last Contact",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Viewing Date",
+              "displayName": "Viewing Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Remarks",
+              "displayName": "Remarks",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Summary",
+              "displayName": "Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Rating",
+              "displayName": "Rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Rating Reason",
+              "displayName": "Rating Reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Scam Score",
+              "displayName": "Scam Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Duplicate Confidence",
+              "displayName": "Duplicate Confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Outreach Message",
+              "displayName": "Outreach Message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Client Match",
+              "displayName": "Client Match",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Strategy Used",
+              "displayName": "Strategy Used",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Created Date",
+              "displayName": "Created Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Updated Date",
+              "displayName": "Updated Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "locationDefine": {
+            "values": {}
+          },
+          "useAppend": true
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2608,
+        656
+      ],
+      "id": "9c4f79a2-fcbb-4d17-aa1c-39a54f3bede6",
+      "name": "Google Sheet – Append Mudah.my (Rent) Row3",
+      "retryOnFail": false,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sZJB2gEMeeNJ7uEC",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        1648,
+        1424
+      ],
+      "id": "44670e9f-0072-4a4f-bf97-080b1f8c379f",
+      "name": "Send message",
+      "webhookId": "1e9e42b6-51fd-4329-b456-8315e86d6c34"
+    }
+  ],
+  "connections": {
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent – Scam & Duplicate Entry Detection",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request – Check Google Sheet": {
+      "main": [
+        [
+          {
+            "node": "If – Sheet Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If – Is Error?": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP Request – Check Google Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If – Sheet Exists?": {
+      "main": [
+        [
+          {
+            "node": "Switch – Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Google Sheets – Create New Spreadsheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets – Create New Spreadsheet": {
+      "main": [
+        [
+          {
+            "node": "Switch – Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript – Extract HTML To JSON": {
+      "main": [
+        [
+          {
+            "node": "Loop Over All Listings 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request – Retrieve Listing": {
+      "main": [
+        [
+          {
+            "node": "If – Is Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request – Retrieve All Listings": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript – Extract HTML To JSON Listings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript – Extract HTML To JSON Listings": {
+      "main": [
+        [
+          {
+            "node": "Split Out – Retrieve Each Listings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Workflow Execution": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields – Set Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields – Set Variables": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request – Retrieve All Listings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over All Listings": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript – Extract HTML To JSON",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP Request – Retrieve All Listings From DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out – Retrieve Each Listings": {
+      "main": [
+        [
+          {
+            "node": "Loop Over All Listings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger – 1 Day Interval At 12 AM": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields – Set Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch – Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields – Set Variables1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Google Sheet – Append IProperty/PropertyGuru (Rent)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain – AI Scoring & Outreach Message",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Basic LLM Chain – AI Scoring & Outreach Message",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain – AI Scoring & Outreach Message": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript – Extract HTML To JSON Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent – Scam & Duplicate Entry Detection": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript – Extract HTML To JSON Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent – Scam & Duplicate Entry Detection",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request3": {
+      "main": [
+        [
+          {
+            "node": "If – Is Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request – Retrieve All Listings From DB": {
+      "main": [
+        [
+          {
+            "node": "Wait – 10 seconds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If – Is Found?": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait – 10 seconds1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over All Listings 2": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Basic LLM Chain – AI Scoring & Outreach Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent – Scam & Duplicate Entry Detection",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript – Handle HTTP Response INSERT Query": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript – Extract HTML To JSON Final": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript – Handle HTTP Response INSERT Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait – 10 seconds": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request – Retrieve Listing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait – 10 seconds1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over All Listings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait – 10 seconds2": {
+      "main": [
+        [
+          {
+            "node": "Loop Over All Listings 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields – Set Variables1": {
+      "main": [
+        [
+          {
+            "node": "Google Sheet – Append Mudah.my (Rent) Row3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheet – Append Mudah.my (Rent) Row3": {
+      "main": [
+        [
+          {
+            "node": "Wait – 10 seconds2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {
+    "Code in JavaScript – Handle HTTP Response INSERT Query": [
+      {
+        "listing_id": "135507986",
+        "listing_title": "Forest Green Condominium Sungai Long",
+        "property_type": "Condominium",
+        "price": 450,
+        "price_per_sqft": 0.46,
+        "size_sqft": 980,
+        "bedrooms": null,
+        "bathrooms": "2",
+        "furnishing": "Partially Furnished",
+        "tenure": "",
+        "floor": "",
+        "car_parks": null,
+        "facilities": "Playground, Tennis Court, Gymnasium, Parking, Security, Jogging Track, Swimming Pool, Minimart, Lift, Multipurpose hall",
+        "full_address": "Selangor - Kajang",
+        "area": "",
+        "latitude": null,
+        "longitude": null,
+        "website": "",
+        "listing_url": "https://www.mudah.my/view?ad_id=115402662",
+        "listing_date": "",
+        "scraped_date": "2026-07-31T02:07:34.285Z",
+        "owner_name": "",
+        "agent_name": "Vincent Khoo",
+        "agent_agency": "GT Nelson Realty Sdn. Bhd.",
+        "phone": "0162339069",
+        "contact_status": "Not Contacted",
+        "last_contact": "",
+        "viewing_date": "",
+        "remarks": "",
+        "summary": "",
+        "rating": 4.5,
+        "rating_reason": "Excellent lead due to Kajang location (Selangor) and competitive partial-furnishing price of RM 450.",
+        "scam_score": null,
+        "scam_reasons": "",
+        "duplicate_confidence": null,
+        "duplicate_of_ad_id": "",
+        "outreach_message": "Hi Yong Wei Sim, this is Vincent Khoo from GT Nelson Realty Sdn. Bhd. I came across your Forest Green Condominium in Sungai Long for sale at RM 450/mth (980 sq.ft.). Is it still available? Would love to hear more details!",
+        "client_match": "",
+        "strategy_used": "mudah_next_data",
+        "created_date": "2026-07-31T02:07:40.083Z",
+        "updated_date": "2026-07-31T02:07:40.083Z",
+        "turso_request_body": "{\"requests\":[{\"type\":\"execute\",\"stmt\":{\"sql\":\"INSERT INTO listings (advertisement_id, listing_title, property_type, price, price_per_sqft, size_sqft, bedrooms, bathrooms, furnishing, tenure, floor, car_parks, facilities, full_address, area, latitude, longitude, website, listing_url, listing_date, scraped_date, owner_name, agent_name, agent_agency, phone, contact_status, last_contact, viewing_date, remarks, summary, rating, rating_reason, scam_score, scam_reasons, duplicate_confidence, outreach_message, client_match, strategy_used, created_date, updated_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\",\"args\":[{\"type\":\"null\"},{\"type\":\"text\",\"value\":\"Forest Green Condominium Sungai Long\"},{\"type\":\"text\",\"value\":\"Condominium\"},{\"type\":\"float\",\"value\":\"450\"},{\"type\":\"float\",\"value\":\"0.46\"},{\"type\":\"float\",\"value\":\"980\"},{\"type\":\"null\"},{\"type\":\"integer\",\"value\":\"2\"},{\"type\":\"text\",\"value\":\"Partially Furnished\"},{\"type\":\"null\"},{\"type\":\"null\"},{\"type\":\"null\"},{\"type\":\"text\",\"value\":\"Playground, Tennis Court, Gymnasium, Parking, Security, Jogging Track, Swimming Pool, Minimart, Lift, Multipurpose hall\"},{\"type\":\"text\",\"value\":\"Selangor - Kajang\"},{\"type\":\"null\"},{\"type\":\"null\"},{\"type\":\"null\"},{\"type\":\"null\"},{\"type\":\"text\",\"value\":\"https://www.mudah.my/view?ad_id=115402662\"},{\"type\":\"null\"},{\"type\":\"text\",\"value\":\"2026-07-31T02:07:34.285Z\"},{\"type\":\"null\"},{\"type\":\"text\",\"value\":\"Vincent Khoo\"},{\"type\":\"text\",\"value\":\"GT Nelson Realty Sdn. Bhd.\"},{\"type\":\"text\",\"value\":\"0162339069\"},{\"type\":\"text\",\"value\":\"Not Contacted\"},{\"type\":\"null\"},{\"type\":\"null\"},{\"type\":\"null\"},{\"type\":\"null\"},{\"type\":\"float\",\"value\":\"4.5\"},{\"type\":\"text\",\"value\":\"Excellent lead due to Kajang location (Selangor) and competitive partial-furnishing price of RM 450.\"},{\"type\":\"null\"},{\"type\":\"null\"},{\"type\":\"null\"},{\"type\":\"text\",\"value\":\"Hi Yong Wei Sim, this is Vincent Khoo from GT Nelson Realty Sdn. Bhd. I came across your Forest Green Condominium in Sungai Long for sale at RM 450/mth (980 sq.ft.). Is it still available? Would love to hear more details!\"},{\"type\":\"null\"},{\"type\":\"text\",\"value\":\"mudah_next_data\"},{\"type\":\"text\",\"value\":\"2026-07-31T02:07:40.083Z\"},{\"type\":\"text\",\"value\":\"2026-07-31T02:07:40.083Z\"}]}},{\"type\":\"close\"}]}"
+      }
+    ]
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "37fad78d0f696ef8d2ae822ab14aa8ecf6d6d4246c13135f4c54944659c6fd00"
+  }
+}
