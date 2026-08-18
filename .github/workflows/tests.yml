@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
 
+# A second push to a PR supersedes the first — cancel the in-flight run rather
+# than paying for both. Keyed on ref, so main and each PR queue independently.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Laravel + Inertia + Svelte. composer ci:check runs pint, eslint,
   # prettier, svelte-check, larastan and pest in one pass.
