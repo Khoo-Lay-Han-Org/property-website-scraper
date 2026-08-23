@@ -1,0 +1,30 @@
+# Repository-wide editor settings. Previously this lived in apps/web/ and
+# covered only the Laravel app, leaving apps/scraper, infra/ and docs/
+# unconfigured.
+#
+# indent_size 4 is the default because it suits both sides of the repo:
+# PSR-12 for PHP and PEP 8 for Python agree on four spaces, and prettier's
+# tabWidth is already 4 in apps/web/.prettierrc.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_size = 4
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.md]
+trim_trailing_whitespace = false
+
+# Covers GitHub workflows, lefthook.yml and infra/n8n/docker-compose.yml,
+# all of which are written with two-space indentation.
+#
+# The Laravel starter kit shipped a {compose,docker-compose} override forcing
+# four here. It is dropped rather than moved up: apps/web publishes no compose
+# file for it to apply to, and at the repository root it would have contradicted
+# the only compose file that does exist.
+[*.{yml,yaml}]
+indent_size = 2
