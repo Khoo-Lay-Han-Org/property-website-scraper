@@ -1,0 +1,39 @@
+# Toolchain versions for the whole repository — `brew install mise`, then
+# `mise install` (or `just tools`).
+#
+# Before this file the versions lived in four unlinked places: the CI workflow
+# pinned Node and pnpm, apps/scraper/.python-version pinned Python, and
+# everything else was whatever each contributor happened to have installed.
+# Nothing detected drift between them.
+#
+# mise is inert until it is activated. Add `eval "$(mise activate zsh)"` to
+# ~/.zshrc to have these versions apply automatically on cd, or prefix commands
+# with `mise exec --` to use them without activating anything.
+
+min_version = "2026.1.0"
+
+[tools]
+# Keep in step with .github/workflows/tests.yml, which pins the same Node and
+# pnpm majors for the web job, and with apps/scraper/.python-version, which is
+# what uv itself reads.
+node = "22"
+pnpm = "10"
+python = "3.13"
+
+# Build and quality tooling. These are not pinned by CI — the scraper job uses
+# astral-sh/setup-uv, and just/lefthook/gitleaks never run there — so this file
+# is the only thing keeping contributors on the same versions.
+uv = "0.10"
+just = "1.58"
+lefthook = "2.1"
+gitleaks = "8.30"
+
+# PHP is deliberately absent. Every mise backend for it (vfox-php, asdf-php)
+# compiles from source, which takes far longer than the rest of this file put
+# together and needs system libraries that mise does not manage. Homebrew ships
+# a bottle, so PHP 8.4 stays a documented prerequisite:
+#
+#   brew install php@8.4 composer
+#
+# apps/web/composer.json requires ^8.4 and CI runs 8.4, so a mismatch surfaces
+# at `composer install` rather than silently.

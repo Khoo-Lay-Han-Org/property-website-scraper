@@ -14,8 +14,14 @@ _default:
 
 # ---------------------------------------------------------------- setup
 
-# Install dependencies for both apps and the git hooks
-setup: setup-web setup-scraper hooks
+# Install the pinned toolchain, both apps' dependencies, and the git hooks
+setup: tools setup-web setup-scraper hooks
+
+# PHP is not among them and stays a Homebrew prerequisite — see mise.toml.
+
+# Install every tool version pinned in mise.toml
+tools:
+    mise install
 
 # Laravel: install, .env, key, migrate, pnpm install, build
 [working-directory: 'apps/web']

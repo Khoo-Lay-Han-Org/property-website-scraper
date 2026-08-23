@@ -20,12 +20,17 @@ Two deployables, three languages. The frontend is **not** a separate service: In
 
 ## Setup
 
-Prerequisites: PHP 8.4, Composer, pnpm, [uv](https://docs.astral.sh/uv/), Docker, and [`just`](https://just.systems) plus [`lefthook`](https://lefthook.dev) (`brew install just lefthook`).
+Prerequisites are PHP, Composer, Docker and [`mise`](https://mise.jdx.dev):
 
 ```sh
-just setup     # both apps, plus the git hooks
+brew install mise php@8.4 composer
+just setup     # toolchain, both apps, git hooks
 just           # list every recipe
 ```
+
+`mise.toml` pins Node, pnpm, Python, uv, `just`, lefthook and gitleaks, so those versions come from one file rather than from whatever each contributor happens to have installed. Add `eval "$(mise activate zsh)"` to your shell profile to pick them up on `cd`, or prefix commands with `mise exec --`.
+
+PHP is the exception and stays a Homebrew prerequisite: every mise backend for it compiles from source, which takes longer than the rest of the toolchain combined. `apps/web/composer.json` requires `^8.4`, so a mismatch surfaces at `composer install`.
 
 `just` is a thin wrapper over each app's own tooling — composer scripts and uv — so it never needs to know what a gate does, only where to run it. Working directly in `apps/web` or `apps/scraper` remains equivalent.
 
