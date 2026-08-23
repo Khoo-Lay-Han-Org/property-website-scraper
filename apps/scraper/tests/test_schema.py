@@ -20,9 +20,14 @@ def db():
     return conn
 
 
+def _scalar(db, sql, params=()):
+    """First column of the first row. Every query below returns exactly one."""
+    return next(iter(db.execute(sql, params)))[0]
+
+
 def _contact(db, name, phone):
     db.execute("INSERT INTO contacts (name, phone) VALUES (?, ?)", (name, phone))
-    return list(db.execute("SELECT id FROM contacts WHERE phone = ?", (phone,)))[0][0]
+    return _scalar(db, "SELECT id FROM contacts WHERE phone = ?", (phone,))
 
 
 def _touch(db, contact_id, direction, occurred_at, channel="whatsapp"):
@@ -90,8 +95,8 @@ def test_stale_hours_measures_the_latest_touch(db):
 
     (_, hours) = _inbox(db)["Mixed"]
     age_sql = "SELECT CAST((julianday('now') - julianday(?)) * 24 AS INTEGER)"
-    inbound_age = list(db.execute(age_sql, ("2020-01-01T00:00:00",)))[0][0]
-    outbound_age = list(db.execute(age_sql, ("2020-01-02T00:00:00",)))[0][0]
+    inbound_age = _scalar(db, age_sql, ("2020-01-01T00:00:00",))
+    outbound_age = _scalar(db, age_sql, ("2020-01-02T00:00:00",))
     assert hours == pytest.approx(outbound_age, abs=1), (
         f"expected age of the LATEST touch ({outbound_age}h), got {hours}h "
         f"(inbound was {inbound_age}h)"

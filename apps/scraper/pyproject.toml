@@ -38,7 +38,30 @@ line-length = 100
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+# Widened while src/pw is still empty, so the ruleset never has to be
+# retrofitted onto existing code. Beyond the original E/F/I/UP/B:
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "S",    # bandit — this app fetches attacker-controlled URLs and builds SQL
+    "DTZ",  # naive datetimes — every timestamp in the V1 schema is UTC
+    "PTH",  # pathlib over os.path
+    "SIM",  # simplify
+    "C4",   # comprehensions
+    "N",    # pep8-naming
+    "A",    # shadowed builtins
+    "T20",  # stray print() — this app has real logging
+    "TID",  # tidy imports
+    "RUF",  # ruff-specific
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Asserts are the point of a test, and test functions are discovered by name
+# rather than called, so bandit's S101 does not apply here.
+"tests/**" = ["S101"]
 
 # `ty` is the Astral type checker — the Python-side counterpart to larastan
 # level 7 and pest's 100% type-coverage gate on apps/web. Turned on while
