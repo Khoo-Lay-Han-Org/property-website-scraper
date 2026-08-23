@@ -33,7 +33,7 @@ setup-web:
 setup-scraper:
     uv sync --extra dev
 
-# Install the lefthook pre-commit hook (formatters on staged files)
+# Install the lefthook hooks — gitleaks and the formatters, on staged files
 hooks:
     lefthook install
 
@@ -87,6 +87,14 @@ test-web:
 [working-directory: 'apps/scraper']
 test-scraper:
     uv run pytest
+
+# CI deliberately scans only the commits each push or pull request adds, so
+# this is the recipe that surfaces anything already in history. Exceptions are
+# recorded in .gitleaks.toml; --redact keeps findings out of scrollback.
+
+# Scan the entire git history for secrets, not just the range CI covers
+audit-secrets:
+    gitleaks git --no-banner --redact --verbose
 
 # Type checkers only — larastan on PHP, ty on Python
 types: types-web types-scraper

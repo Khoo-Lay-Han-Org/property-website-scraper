@@ -42,6 +42,7 @@ PHP is the exception and stays a Homebrew prerequisite: every mise backend for i
 | `just types` | Type checkers only — larastan on PHP, `ty` on Python |
 | `just fmt` | Every formatter and autofixer across both apps |
 | `just artisan <cmd>` | An artisan command, without the `cd` |
+| `just audit-secrets` | Full-history secret scan (CI only scans new commits) |
 | `just n8n-up` / `n8n-down` / `n8n-logs` | n8n compose stack, with the mandatory `--env-file` already applied |
 
 n8n reads its credentials from the repository-root `.env`; see [`infra/n8n/README.md`](infra/n8n/README.md).
@@ -56,6 +57,12 @@ n8n reads its credentials from the repository-root `.env`; see [`infra/n8n/READM
 | `apps/scraper` | ruff lint, ruff format, [`ty`](https://github.com/astral-sh/ty), pytest with coverage |
 
 Coverage on the Python side is measured but not yet enforced: `src/pw` is scaffolding, so the floor in `pyproject.toml` stays at 0 until the scraper lands (SD-7/SQ-6).
+
+### Secrets
+
+n8n credentials live in the repository-root `.env`, which is gitignored — nothing in the repository should ever contain a real one. [gitleaks](https://github.com/gitleaks/gitleaks) enforces that at commit time and again in CI.
+
+CI scans only the commits each push or pull request adds. A full-history scan re-reports the same historical findings on every run, which trains everyone to ignore the job; run `just audit-secrets` for that instead. Known false positives are recorded in `.gitleaks.toml`.
 
 ## Documentation
 

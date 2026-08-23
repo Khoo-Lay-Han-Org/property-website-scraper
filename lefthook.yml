@@ -13,42 +13,58 @@
 # expanded *after*. A bare `*.php` matches at any depth, but a path-shaped
 # pattern must spell out the prefix — hence apps/web/resources/** below.
 #
-# Formatters and linters only — no test runs. `composer ci:check` (pest,
+# Formatters and a secret scan only — no test runs. `composer ci:check` (pest,
 # larastan, svelte-check) and `pytest` are CI's job; see
 # .github/workflows/tests.yml.
+#
+# Skip with LEFTHOOK=0, e.g. `LEFTHOOK=0 git commit`.
 
 pre-commit:
-  parallel: true
+  # Piped rather than parallel so the secret scan finishes before any formatter
+  # starts rewriting and restaging files underneath it.
+  piped: true
   jobs:
-    - name: ruff
-      root: "apps/scraper/"
-      glob: "*.py"
-      run: uv run ruff check --fix {staged_files} && uv run ruff format {staged_files}
-      stage_fixed: true
+    # Scans the staged diff rather than the working tree, so it sees exactly
+    # what is about to be committed. --redact keeps any detected secret out of
+    # terminal scrollback, which would only move the leak somewhere else.
+    # Exceptions live in .gitleaks.toml.
+    - name: gitleaks
+      run: gitleaks git --staged --no-banner --redact
 
-    - name: pint
-      root: "apps/web/"
-      glob: "*.php"
-      run: vendor/bin/pint {staged_files}
-      stage_fixed: true
+    - name: format
+      group:
+        parallel: true
+        jobs:
+          - name: ruff
+            root: "apps/scraper/"
+            glob: "*.py"
+            run: uv run ruff check --fix {staged_files} && uv run ruff format {staged_files}
+            stage_fixed: true
 
-    # eslint.config.js already ignores generated output — resources/js/
-    # actions, routes and wayfinder, plus components/ui.
-    - name: eslint
-      root: "apps/web/"
-      glob: "*.{ts,js,svelte}"
-      run: pnpm exec eslint --fix --no-warn-ignored {staged_files}
-      stage_fixed: true
+          - name: pint
+            root: "apps/web/"
+            glob: "*.php"
+            run: vendor/bin/pint {staged_files}
+            stage_fixed: true
 
-    # Scoped to resources/ to match package.json's own `format` script.
-    # Widening it reformats Laravel Boost's generated output (CLAUDE.md,
-    # AGENTS.md, .agents/skills/**) and composer.json, all of which are
-    # rewritten by their own generators and would churn every commit.
-    #
-    # No conflict with eslint: eslint.config.js applies
-    # eslint-config-prettier/flat last, disabling every formatting rule.
-    - name: prettier
-      root: "apps/web/"
-      glob: "apps/web/resources/**/*.{ts,js,svelte,css}"
-      run: pnpm exec prettier --write {staged_files}
-      stage_fixed: true
+          # eslint.config.js already ignores generated output — resources/js/
+          # actions, routes and wayfinder, plus components/ui.
+          - name: eslint
+            root: "apps/web/"
+            glob: "*.{ts,js,svelte}"
+            run: pnpm exec eslint --fix --no-warn-ignored {staged_files}
+            stage_fixed: true
+
+          # Scoped to resources/ to match package.json's own `format` script.
+          # Widening it reformats Laravel Boost's generated output (CLAUDE.md,
+          # AGENTS.md, .agents/skills/**) and composer.json, all of which are
+          # rewritten by their own generators and would churn every commit.
+          #
+          # No conflict with eslint: eslint.config.js applies
+          # eslint-config-prettier/flat last, disabling every formatting rule.
+          - name: prettier
+            root: "apps/web/"
+            glob: "apps/web/resources/**/*.{ts,js,svelte,css}"
+            run: pnpm exec prettier --write {staged_files}
+            stage_fixed: true
+

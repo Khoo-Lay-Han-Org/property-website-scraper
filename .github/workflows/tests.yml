@@ -16,6 +16,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Secret scanning. Scoped to the commits this event actually adds rather than
+  # the whole history: a full scan re-reports the same historical findings on
+  # every run, which trains everyone to ignore the job. `just audit-secrets`
+  # runs the full-history scan on demand instead.
+  #
+  # gitleaks is installed through mise so the version matches mise.toml rather
+  # than drifting independently. gitleaks-action is avoided deliberately — it
+  # requires a paid licence key for repositories owned by an organisation.
+  secrets:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Needed to resolve the base of the range below; the default depth of
+          # 1 leaves no history to diff against.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup mise
+        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          # Installs only gitleaks out of mise.toml — this job has no use for
+          # Node or Python. install_args is silently ignored if tool_versions
+          # or mise_toml is also set, so neither is.
+          install_args: gitleaks
+
+      # Values reach the script through the environment rather than ${{ }}
+      # interpolation, which would splice a branch name straight into the shell.
+      - name: Scan pushed commits for secrets
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            range="origin/$BASE_REF..HEAD"
+          elif [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            # Branch created by this push, so there is no previous tip to diff
+            # against. Scan only its tip commit.
+            range="$SHA~1..$SHA"
+          else
+            range="$BEFORE..$SHA"
+          fi
+          echo "Scanning $range"
+          gitleaks git --log-opts="$range" --no-banner --redact --verbose
+
   # Laravel + Inertia + Svelte. composer ci:check runs pint, eslint,
   # prettier, svelte-check, larastan and pest in one pass.
   web:
