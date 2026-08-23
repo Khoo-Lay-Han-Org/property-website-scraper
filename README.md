@@ -49,7 +49,15 @@ n8n reads its credentials from the repository-root `.env`; see [`infra/n8n/READM
 
 ### Gates
 
-`lefthook` runs formatters only on staged files — ruff, pint, eslint, prettier. Everything that can fail slowly is CI's job (`.github/workflows/tests.yml`), and `just check` reproduces it locally:
+Three of them, split by how long they take to fail:
+
+| Stage | What runs | Skip with |
+|---|---|---|
+| **pre-commit** | gitleaks on the staged diff, then ruff, pint, eslint and prettier on staged files | `LEFTHOOK=0 git commit` |
+| **pre-push** | the full gate for each app the push actually touches | `LEFTHOOK=0 git push` |
+| **CI** | both app gates, plus a secret scan of the commits the push or pull request adds | — |
+
+`just check` reproduces the CI gate locally at any point. What each app enforces:
 
 | Layer | Gates |
 |---|---|

@@ -33,7 +33,7 @@ setup-web:
 setup-scraper:
     uv sync --extra dev
 
-# Install the lefthook hooks — gitleaks and the formatters, on staged files
+# Install the lefthook hooks — gitleaks and formatters on commit, gates on push
 hooks:
     lefthook install
 
