@@ -20,37 +20,57 @@ Two deployables, three languages. The frontend is **not** a separate service: In
 
 ## Setup
 
-**Laravel** — needs PHP 8.4, Composer and pnpm:
+Prerequisites are PHP, Composer, Docker and [`mise`](https://mise.jdx.dev):
 
 ```sh
-cd apps/web
-composer setup     # install, .env, key, migrate, pnpm install, build
-composer dev       # serve + vite + queue + logs
+brew install mise php@8.4 composer
+just setup     # toolchain, both apps, git hooks
+just           # list every recipe
 ```
 
-**Python** — needs [uv](https://docs.astral.sh/uv/):
+`mise.toml` pins Node, pnpm, Python, uv, `just`, lefthook and gitleaks, so those versions come from one file rather than from whatever each contributor happens to have installed. Add `eval "$(mise activate zsh)"` to your shell profile to pick them up on `cd`, or prefix commands with `mise exec --`.
 
-```sh
-cd apps/scraper
-uv sync --extra dev
-uv run pytest
-```
+PHP is the exception and stays a Homebrew prerequisite: every mise backend for it compiles from source, which takes longer than the rest of the toolchain combined. `apps/web/composer.json` requires `^8.4`, so a mismatch surfaces at `composer install`.
 
-**n8n** — credentials come from the repository-root `.env`, so the `--env-file` flag is mandatory:
+`just` is a thin wrapper over each app's own tooling — composer scripts and uv — so it never needs to know what a gate does, only where to run it. Working directly in `apps/web` or `apps/scraper` remains equivalent.
 
-```sh
-cd infra/n8n
-docker compose --env-file ../../.env up -d
-```
+| Recipe | What it does |
+|---|---|
+| `just dev` | Laravel serve + Vite + queue + log tail |
+| `just check` | Everything CI runs, both apps, in CI's order — the pre-push check |
+| `just test` | Test suites only, no linters |
+| `just types` | Type checkers only — larastan on PHP, `ty` on Python |
+| `just fmt` | Every formatter and autofixer across both apps |
+| `just artisan <cmd>` | An artisan command, without the `cd` |
+| `just audit-secrets` | Full-history secret scan (CI only scans new commits) |
+| `just n8n-up` / `n8n-down` / `n8n-logs` | n8n compose stack, with the mandatory `--env-file` already applied |
 
-See [`infra/n8n/README.md`](infra/n8n/README.md).
+n8n reads its credentials from the repository-root `.env`; see [`infra/n8n/README.md`](infra/n8n/README.md).
 
-**Git hooks** — ruff, pint, eslint and prettier on staged files:
+### Gates
 
-```sh
-brew install lefthook
-lefthook install
-```
+Three of them, split by how long they take to fail:
+
+| Stage | What runs | Skip with |
+|---|---|---|
+| **pre-commit** | gitleaks on the staged diff, then ruff, pint, eslint and prettier on staged files | `LEFTHOOK=0 git commit` |
+| **pre-push** | the full gate for each app the push actually touches | `LEFTHOOK=0 git push` |
+| **CI** | both app gates, plus a secret scan of the commits the push or pull request adds | — |
+
+`just check` reproduces the CI gate locally at any point. What each app enforces:
+
+| Layer | Gates |
+|---|---|
+| `apps/web` | pint, eslint, prettier, svelte-check, larastan level 7, rector, peck, pest — 100% type coverage, 90% line coverage |
+| `apps/scraper` | ruff lint, ruff format, [`ty`](https://github.com/astral-sh/ty), pytest with coverage |
+
+Coverage on the Python side is measured but not yet enforced: `src/pw` is scaffolding, so the floor in `pyproject.toml` stays at 0 until the scraper lands (SD-7/SQ-6).
+
+### Secrets
+
+n8n credentials live in the repository-root `.env`, which is gitignored — nothing in the repository should ever contain a real one. [gitleaks](https://github.com/gitleaks/gitleaks) enforces that at commit time and again in CI.
+
+CI scans only the commits each push or pull request adds. A full-history scan re-reports the same historical findings on every run, which trains everyone to ignore the job; run `just audit-secrets` for that instead. Known false positives are recorded in `.gitleaks.toml`.
 
 ## Documentation
 

@@ -17,7 +17,9 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
     "ruff>=0.7",
+    "ty>=0.0.18",           # Astral type checker; preview, pinned loosely on purpose
 ]
 
 [project.scripts]
@@ -36,7 +38,70 @@ line-length = 100
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+# Widened while src/pw is still empty, so the ruleset never has to be
+# retrofitted onto existing code. Beyond the original E/F/I/UP/B:
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "S",    # bandit — this app fetches attacker-controlled URLs and builds SQL
+    "DTZ",  # naive datetimes — every timestamp in the V1 schema is UTC
+    "PTH",  # pathlib over os.path
+    "SIM",  # simplify
+    "C4",   # comprehensions
+    "N",    # pep8-naming
+    "A",    # shadowed builtins
+    "T20",  # stray print() — this app has real logging
+    "TID",  # tidy imports
+    "RUF",  # ruff-specific
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Asserts are the point of a test, and test functions are discovered by name
+# rather than called, so bandit's S101 does not apply here.
+"tests/**" = ["S101"]
+
+# `ty` is the Astral type checker — the Python-side counterpart to larastan
+# level 7 and pest's 100% type-coverage gate on apps/web. Turned on while
+# src/pw is still empty so the gate never has a backlog to pay down.
+[tool.ty.environment]
+python-version = "3.13"
+
+[tool.ty.src]
+include = ["src", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# Every async test is a plain `async def` — auto mode saves decorating each
+# one. pytest-asyncio was already a dependency but had no mode set, which
+# would have silently errored on the first async FastAPI test.
+asyncio_mode = "auto"
+
+# Coverage is on by default so local runs match CI. Until src/pw has code that
+# a test imports, pytest-cov prints a "No data to report" warning after the
+# summary — it is raised outside the test session, so pytest's filterwarnings
+# cannot reach it. It goes away on its own with the first real module.
+addopts = "--cov --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["pw"]
+branch = true
+
+# src/pw is scaffolding only — six empty __init__.py files — and test_schema.py
+# reads schema.sql off disk without importing the package, so coverage collects
+# nothing and says so twice per run. Delete these two lines the moment any test
+# imports pw; they are noise suppression for an empty tree, not a policy.
+disable_warnings = ["module-not-imported", "no-data-collected"]
+
+[tool.coverage.report]
+# Floor stays 0 until there is behaviour to cover. Raise to 90 to match the
+# pest gate on apps/web as soon as the scraper lands (SD-7/SQ-6).
+fail_under = 0
+show_missing = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

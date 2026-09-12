@@ -1,0 +1,20 @@
+title = "property-website-scraper"
+
+# Extends the rules built into the gitleaks binary rather than replacing them,
+# so the project inherits every upstream detector and only records the
+# exceptions below.
+[extend]
+useDefault = true
+
+# Laravel Boost regenerates its skill documentation into .agents/skills/ and
+# .claude/skills/. One of those pages teaches secret handling by showing a
+# committed .env as the "Incorrect" example, using the placeholder values
+# sk_live_abc123 and wJalrXUtnFEMI — the latter being the fake key from AWS's
+# own documentation. Both trip generic-api-key.
+#
+# Scoped with targetRules so it silences that one detector on generated
+# documentation, not every detector on every markdown file.
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Placeholder credentials in generated Laravel Boost skill docs"
+paths = ['''\.(?:agents|claude)/skills/.*\.md$''']
