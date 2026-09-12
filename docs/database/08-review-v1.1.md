@@ -43,7 +43,8 @@ The third measurement above is why this is nasty: `julianday()` parses **both** 
 
 **Ruling: standardise on the space form**, i.e. exactly what `datetime('now')` emits. It is what every `DEFAULT` clause in `schema.sql` already produces, so the alternative means editing ~20 defaults to change nothing about correctness. Two producers change instead of twenty defaults.
 
-Enforce it in the DDL:
+Enforce it in the DDL. **⚠️ SUPERSEDED 2026-09-11 — the guard below is the weak one. Use the
+`strftime` round-trip instead; see "The guard is `strftime`" at the end of this section.**
 
 ```sql
 -- Turso Database 0.7.x / stock SQLite 3.37+
@@ -78,13 +79,59 @@ new Date().toISOString().slice(0, 19).replace('T', ' ')   // n8n
 
 ---
 
+### 22.1a The guard is `strftime`, and IG-10 is closed by construction
+
+**Two corrections to the ruling above, both settled 2026-09-11.**
+
+**First, the `GLOB` guard is a shape test that accepts well-formed garbage.** It was measured
+against the three defect classes it is supposed to catch, alongside the alternative:
+
+`[MEASURED 2026-09-02: 20,000-row inserts, 2 passes, sqlite3 3.51.0]`
+
+| Guard | Time | Overhead | `9999-99-99 99:99:99` | `2026-02-30` | `T` form |
+|---|---|---|---|---|---|
+| none | 3.7 ms | — | accepts | accepts | accepts |
+| `GLOB` pattern | 6.4 ms | +73% | **accepts** | **accepts** | rejects |
+| `strftime` round-trip | 8.5 ms | +130% | rejects | rejects | rejects |
+
+The percentage is alarming and meaningless. The strongest guard costs **0.24 µs per row**
+against a workload of roughly 105 writes a day. `strftime` catches three defect classes for the
+same one line of DDL, so it is simply the better line:
+
+```sql
+CHECK (created_at IS strftime('%Y-%m-%d %H:%M:%S', created_at))
+```
+
+Apply it to every instant column named above, in place of the `GLOB` pattern.
+
+**Second, IG-10 is closed by construction, not by architecture.** An earlier review proposed
+marking it resolved on the grounds that `STRICT` tables and a single writer make the
+dialect split impossible. That is wrong and the reasoning must not survive here: **`STRICT`
+constrains storage class, not meaning.** A `TEXT` column under `STRICT` accepts
+`'2026-08-09T04:46:17.000Z'` and `'banana'` with equal enthusiasm, because both are text.
+`STRICT` contributes nothing to this defect.
+
+What closes IG-10 is three things done deliberately, all of which have to be built:
+
+1. the `strftime` `CHECK` above, on every instant column, inside the original `CREATE TABLE`
+   (there is no `ALTER TABLE ADD CONSTRAINT` — see ADR 0005);
+2. validation in the ingest Action, because a rejected write at the database is a 500 rather
+   than a useful error;
+3. a test that pushes a `T`-form timestamp through the Action and expects rejection.
+
+Both levels are kept on purpose. Application-level and database-level validation answer
+different questions — one produces a good error message, the other is the guarantee that holds
+when someone writes to the file directly.
+
+---
+
 ### 22.2 `contacts.phone UNIQUE` makes identity a single mutable attribute
 
 §6.1 calls the phone-keyed grain *"the single best decision in the V1 schema"*. The **grain** is right — one row per person, role on the relationship. The **key** is not.
 
 Three failure modes, all live:
 
-1. **One person, two numbers.** Agents routinely carry a personal number and an agency number, and portals list whichever was typed that day. Same human, two `contacts` rows, and `contact_properties` and `interactions` split across both — so "everything I know about this agent" returns half of it, with no indication that it did.
+1. **One person, two numbers.** Agents routinely carry a personal number and an agency number, and portals list whichever was typed that day. Same human, two `contacts` rows, and `property_parties` and `interactions` split across both — so "everything I know about this agent" returns half of it, with no indication that it did.
 2. **A number changes hands.** Malaysian prepaid numbers are recycled. The unique key then silently merges two unrelated people into one row, and the interaction history of a stranger appears in someone's timeline.
 3. **`phone` is nullable**, documented in §6.1 as deliberate (a walk-in may have only an email). SQLite treats `NULL`s as **distinct** in a unique index, so email-only contacts have no dedup key at all — precisely the unbounded-duplicates failure IG-1 documents for `advertisement_id`.
 
@@ -144,7 +191,7 @@ This fix travels with the query into the application (§24.1); it is not a reaso
 
 ---
 
-### 22.4 No change-detection hash on `property_sources`
+### 22.4 No change-detection hash on `advertisements`
 
 §6.6 rules that `price_history` writes are change-only, and that ruling is right — it is the 500x storage decision. But it covers **one column**. Every other scraped field is blind-overwritten on each run:
 
@@ -152,7 +199,7 @@ This fix travels with the query into the application (§24.1); it is not a reaso
 - **"What changed in this ad since yesterday"** is unanswerable, which is exactly the question a price-drop alert has to answer credibly before anyone acts on it.
 - **A portal change and an extractor regression are indistinguishable.** The second is a defect and is currently invisible.
 
-**Ruling: add two columns to `property_sources`.**
+**Ruling: add two columns to `advertisements`.**
 
 ```sql
 content_hash   TEXT,   -- sha256 of the normalised extracted payload
@@ -175,7 +222,7 @@ Pairs directly with `raw_payloads` (§23.1): the hash tells you *that* something
 
 `active | under_offer | closed | withdrawn | expired` mixes two owners:
 
-- **machine-owned** — `active`, `expired`, set by §7.3's staleness sweep from `last_seen_at`
+- **machine-owned** — `active`, `expired`, set by §7.3's staleness sweep from `last_seen_at`. **Amended 2026-09-12** — the sweep reads `advertisements.last_seen_at` through a `NOT EXISTS`, because `properties.last_seen_at` is cut (`03-entities.md` §6.2), and under ADR 0003 it writes `hidden` rather than `expired`
 - **human-owned** — `under_offer`, `closed`, `withdrawn`, set by the agent
 
 The sweep guards `AND status = 'active'`. So a unit the agent moved to `under_offer` **never expires**, even years after the ad vanished from the portal; and a unit that *should* be `under_offer` gets overwritten to `expired` whenever the agent has not updated it yet. Both outcomes are silent, and which one you get depends on a race between a human and a cron job.
@@ -196,7 +243,7 @@ EXISTS (SELECT 1 FROM deals
          WHERE property_id = ?1 AND stage IN ('offer','booking','agreement'))
 ```
 
-**Index consequence.** `idx_properties_acq (acquisition, status)` and §9.1's proposed `idx_properties_feed` both reference `status`; both become `listing_status`. The partial predicate is otherwise unchanged, and since neither index exists on any deployed database yet, this is a text edit.
+**Index consequence.** `idx_properties_acq (acquisition, status)` and §9.1's proposed `idx_properties_feed` both reference `status`; both become `listing_status`. **⚠️ Amended 2026-09-11:** `idx_properties_acq` is deleted outright rather than renamed, along with the `acquisition` column (ADR 0006), and `listing_status`' values become `visible`/`hidden` (ADR 0003 amendment). The partial predicate is otherwise unchanged, and since neither index exists on any deployed database yet, this is a text edit.
 
 ---
 
@@ -227,6 +274,17 @@ CREATE TABLE schema_migrations (
 ```
 
 `checksum` catches a migration edited after it was applied — the exact failure §17's *"never edit an applied migration"* discipline can otherwise only request politely. **Blocking: nothing else in this chapter is safe to ship without it.**
+
+> ⚠️ **CUT 2026-09-11 — do not build this table.** The problem it solves is real and the
+> solution now arrives with the framework. Laravel ships its own `migrations` table and creates
+> it on first `migrate`, so building a second version table would leave two disagreeing answers
+> to "which schema does this file hold" — which is a worse position than the one that motivated
+> the table.
+>
+> **The one thing Laravel's table does not carry is `checksum`.** A migration edited after it
+> was applied is still undetected. That stays a discipline rather than a mechanism, and the
+> place to enforce it is a CI check that the applied migration files have not changed, not a
+> column. Recorded here so the gap is known rather than assumed solved.
 
 #### `raw_payloads`
 
@@ -283,7 +341,7 @@ CREATE TABLE portals (
 );
 ```
 
-`property_sources.website TEXT` becomes `portal_id INTEGER NOT NULL REFERENCES portals(id)`, and the dedup key becomes `UNIQUE (portal_id, advertisement_id)`. `'mudah'` / `'Mudah'` / `'mudah.my'` can no longer become three portals, because they can no longer be typed. It also gives crawl policy — rate limits, robots checks, which parser — a home other than an n8n node, and narrows the largest table's key by several bytes per row.
+`advertisements.website TEXT` becomes `portal_id INTEGER NOT NULL REFERENCES portals(id)`, and the dedup key becomes `UNIQUE (portal_id, advertisement_id)`. `'mudah'` / `'Mudah'` / `'mudah.my'` can no longer become three portals, because they can no longer be typed. It also gives crawl policy — rate limits, robots checks, which parser — a home other than an n8n node, and narrows the largest table's key by several bytes per row.
 
 #### `scrape_targets`
 
@@ -334,7 +392,7 @@ This is also the other half of IG-5: with per-item rows, `scrape_runs`' counters
 
 #### `deals` + `deal_parties` — the largest gap in the schema
 
-An agent's work is a pipeline and there is no table for it. `contact_properties.role` can say *this person is an interested buyer*; it cannot say which stage, at what price, on whose commission, or when it closed. **Commission is why the agent opens the application, and it is currently unrepresentable.**
+An agent's work is a pipeline and there is no table for it. `property_parties.role` can say *this person is an interested buyer*; it cannot say which stage, at what price, on whose commission, or when it closed. **Commission is why the agent opens the application, and it is currently unrepresentable.**
 
 **Grain:** one row per (property, transaction attempt). A unit that fails to sell and is relisted is two deals.
 
@@ -346,9 +404,10 @@ CREATE TABLE deals (
   stage                TEXT NOT NULL DEFAULT 'lead'
                        CHECK (stage IN ('lead','viewing','negotiating','offer',
                                         'booking','agreement','completed','lost')),
-  agreed_price_cents   INTEGER CHECK (agreed_price_cents IS NULL OR agreed_price_cents > 0),
-  commission_cents     INTEGER CHECK (commission_cents IS NULL OR commission_cents >= 0),
-  commission_split_pct REAL,
+  agreed_price_minor   INTEGER CHECK (agreed_price_minor IS NULL OR agreed_price_minor > 0),
+  commission_minor     INTEGER CHECK (commission_minor IS NULL OR commission_minor >= 0),
+  commission_split_bp  INTEGER CHECK (commission_split_bp IS NULL OR
+                                      commission_split_bp BETWEEN 0 AND 10000),
   expected_close_on    TEXT,
   closed_on            TEXT,
   lost_reason          TEXT,
@@ -359,6 +418,43 @@ CREATE TABLE deals (
 );
 CREATE INDEX idx_deals_stage ON deals(stage, expected_close_on)
   WHERE stage NOT IN ('completed','lost');
+
+> ### ⚠️ Amended 2026-09-11 — three changes from [ADR 0010](../adr/0010-the-agreed-commission-rate-and-the-earned-commission-are-separate.md)
+>
+> **Add `mandate_id INTEGER REFERENCES mandates(id) ON DELETE RESTRICT`, nullable.** The Deal
+> must name the Mandate it was done under rather than have it inferred. Finding the Mandate by
+> date range picks the wrong row exactly at the boundary — a unit held at 2%, expired, won back
+> at 2.5%, sold under the second — which is where money is actually disputed. `RESTRICT` because
+> a Mandate that produced a Deal must not be deletable. **Nullable is the co-broke case**: the
+> other agency held the instruction and there is no Mandate here to point at.
+>
+> **`commission_minor` above is already correct and must stay separate from the Mandate's rate.**
+> `mandates.commission_rate_bp` is the *agreed default*; this column is *what was earned*. They
+> diverge routinely — a co-broke split, a discount to close, a referral out — and conflating them
+> lets a discount on one sale silently rewrite what the owner agreed to.
+>
+> **✅ Ruled 2026-09-12 — `commission_split_pct REAL` becomes `commission_split_bp INTEGER`.**
+> Flagged on 2026-09-11 and left open; closed here. The column is shown in its new form above.
+>
+> The weak argument for `REAL` was that a ratio is not a payable amount, so §4.2's money rule does
+> not reach it. That is true and it is not the point. **This ratio multiplies `commission_minor`,
+> which *is* money.** A float factor against an integer minor-unit amount reintroduces exactly the
+> representation error §4.2 exists to prevent, at the one number in the schema most likely to be
+> disputed with a counterparty. Basis points keep the arithmetic in integers:
+>
+> ```sql
+> -- what this side of a co-broke actually earns, exactly, with one rounding point
+> SELECT commission_minor * commission_split_bp / 10000 FROM deals WHERE id = ?1;
+> ```
+>
+> Resolution is 0.01%, against real splits that are 50/50, 60/40 or 70/30. The `_bp` suffix and
+> the `BETWEEN 0 AND 10000` bound match `mandates.commission_rate_bp`, so the schema now carries
+> **one** representation of a percentage rather than two, and the naming says which one it is at
+> every call site. Carried by **M1c**.
+>
+> **One invariant has no expressible form here.** A Mandate and the Deal naming it must be about
+> the same Property. A `CHECK` sees one row and subqueries are prohibited inside it (ADR 0008),
+> so this guard lives in the Action and needs a test — nothing in the database will catch it.
 
 CREATE TABLE deal_parties (
   id         INTEGER PRIMARY KEY,
@@ -438,8 +534,8 @@ CREATE TABLE requirements (
   contact_id      INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
   listing_type    TEXT NOT NULL CHECK (listing_type IN ('rent','sale')),
   area            TEXT,
-  min_price_cents INTEGER,
-  max_price_cents INTEGER,
+  min_price_minor INTEGER,
+  max_price_minor INTEGER,
   min_bedrooms    INTEGER,
   min_size_sqft   REAL,
   property_type   TEXT,
@@ -447,8 +543,8 @@ CREATE TABLE requirements (
   expires_on      TEXT,
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
   CONSTRAINT ck_requirements_price_range CHECK (
-    min_price_cents IS NULL OR max_price_cents IS NULL
-    OR min_price_cents <= max_price_cents)
+    min_price_minor IS NULL OR max_price_minor IS NULL
+    OR min_price_minor <= max_price_minor)
 );
 
 CREATE TABLE requirement_matches (
@@ -473,7 +569,7 @@ Every portal ad carries 10-30 photos and none are stored. Beyond the obvious UI 
 ```sql
 CREATE TABLE property_media (
   id                 INTEGER PRIMARY KEY,
-  property_source_id INTEGER NOT NULL REFERENCES property_sources(id) ON DELETE CASCADE,
+  property_source_id INTEGER NOT NULL REFERENCES advertisements(id) ON DELETE CASCADE,
   url                TEXT NOT NULL,
   position           INTEGER NOT NULL DEFAULT 0,
   sha256             TEXT,
@@ -534,7 +630,7 @@ CREATE TABLE message_outbox (
 
 #### `contact_merges` / `property_merges`
 
-Deduplication is fuzzy by construction (IG-8), so it **will** be wrong in both directions. Merging without a record is irreversible: foreign keys from `interactions`, `contact_properties` and `deals` get repointed and the losing id is gone.
+Deduplication is fuzzy by construction (IG-8), so it **will** be wrong in both directions. Merging without a record is irreversible: foreign keys from `interactions`, `property_parties` and `deals` get repointed and the losing id is gone.
 
 ```sql
 CREATE TABLE contact_merges (
@@ -590,11 +686,11 @@ Kept separate from §5 so that §5 remains a picture of what exists. Existing en
 ```mermaid
 erDiagram
     PORTALS       ||--o{ SCRAPE_TARGETS   : "is crawled via"
-    PORTALS       ||--o{ PROPERTY_SOURCES : "hosts"
+    PORTALS       ||--o{ ADVERTISEMENTS : "hosts"
     SCRAPE_TARGETS||--o{ FETCH_LOG        : "produced"
     SCRAPE_RUNS   ||--o{ FETCH_LOG        : "logged"
     SCRAPE_RUNS   ||--o{ RAW_PAYLOADS     : "captured"
-    PROPERTY_SOURCES ||--o{ PROPERTY_MEDIA : "pictured by"
+    ADVERTISEMENTS ||--o{ PROPERTY_MEDIA : "pictured by"
 
     CONTACTS   ||--o{ CONTACT_IDENTIFIERS : "is reachable at"
     CONTACTS   ||--o{ REQUIREMENTS        : "is looking for"
@@ -643,10 +739,10 @@ Keep the SQL verbatim on the way out. Zero behaviour change; one experimental-fe
 
 **Keep it if the Python scraper is built**, where it becomes the parent of `fetch_log` and `raw_payloads` (§23.1) and genuinely earns its place.
 
-**Either way, its shape is wrong.** Six of its eleven columns are independently written counters that nothing can check (IG-5). If it stays, keep `(id, portal_id, started_at, finished_at, status)` and drop `pages_fetched`, `listings_found`, `new_count`, `duplicate_count`, `error_count`, `notes` — deriving each from `fetch_log` and `property_sources`:
+**Either way, its shape is wrong.** Six of its eleven columns are independently written counters that nothing can check (IG-5). If it stays, keep `(id, portal_id, started_at, finished_at, status)` and drop `pages_fetched`, `listings_found`, `new_count`, `duplicate_count`, `error_count`, `notes` — deriving each from `fetch_log` and `advertisements`:
 
 ```sql
-SELECT count(*) FROM property_sources WHERE scrape_run_id = ?1;
+SELECT count(*) FROM advertisements WHERE scrape_run_id = ?1;
 ```
 
 Derived counts cannot disagree with reality. That retires IG-5 by deletion rather than by discipline. It does require the `scrape_run_id` column that §19 item 14 and OQ-7 currently reject — and that rejection was correct under Gate 4 *at the time*, because no access pattern needed it. `fetch_log` and `raw_payloads` supply the missing pattern.
@@ -657,17 +753,17 @@ Derived counts cannot disagree with reality. That retires IG-5 by deletion rathe
 
 **Supersedes §6.2 and §13.**
 
-- Pure derivation of `price_cents / size_sqft`.
+- Pure derivation of `price_minor / size_sqft`.
 - **No reader.** No AP references it; no query in the repository, the tests, or the n8n workflows selects it `[MEASURED: grep across all query sites @ 2026-08-06]`.
-- §13 already documents that it goes stale when `price_cents` changes on a rescrape and `size_sqft` does not, **with no mechanism to recompute it** — generated columns are experimental on this engine (§2.7).
+- §13 already documents that it goes stale when `price_minor` changes on a rescrape and `size_sqft` does not, **with no mechanism to recompute it** — generated columns are experimental on this engine (§2.7).
 
 A derived column with no reader and a documented drift bug is the easiest cut in the schema. Compute at read; revisit as a generated column if the embedded path moves to stock SQLite (§16.2).
 
-### 24.4 Cut `property_sources.price_at_scrape_cents` {#cut-price-at-scrape}
+### 24.4 Cut `advertisements.price_at_scrape_minor` {#cut-price-at-scrape}
 
 **Supersedes §6.3 and §13.**
 
-Third copy of the same value. §13 defends `properties.price_cents` explicitly (AP-05 sorts on it) and `price_history.property_id` explicitly (AP-13 avoids a join); it never defends this one — it only renames it from `REAL`.
+Third copy of the same value. §13 defends `properties.price_minor` explicitly (AP-05 sorts on it) and `price_history.property_id` explicitly (AP-13 avoids a join); it never defends this one — it only renames it from `REAL`.
 
 The column is exactly *"the newest `price_history` row for this source"*, which the proposed `UNIQUE (property_source_id, observed_at)` index answers in one probe. No access pattern reads it. §17's upsert shape writes it on every conflict, so it also costs a write per observation to store something already stored.
 
@@ -686,7 +782,16 @@ The column is exactly *"the newest `price_history` row for this source"*, which 
   SELECT a = b AND b = c;                              → 1
 ```
 
-`now` is fixed for the duration of a statement, both columns carry the same default, and nothing overrides either — for `scraped` rows because they are created on first sighting, and for `own_mandate` rows because `first_seen_at` has no independent meaning. Keep `first_seen_at`: it is the semantic one and it pairs with `last_seen_at` to drive AP-11.
+`now` is fixed for the duration of a statement, both columns carry the same default, and nothing overrides either — for `scraped` rows because they are created on first sighting, and for `own_mandate` rows because `first_seen_at` has no independent meaning. Keep `first_seen_at`: it is the semantic one.
+
+> **⚠️ Amended 2026-09-12 — the stated reason for keeping it is gone, and it is kept anyway.** The
+> pairing with `properties.last_seen_at` no longer exists: that column was cut as derived
+> (`03-entities.md` §6.2), and AP-11 now runs entirely against `advertisements`.
+> `properties.first_seen_at` survives on its own merit — when this unit was first observed is a
+> fact about the Property that no other column records, it is written once and never updated, and
+> it is the input to the re-appearance measurement §7.3 asks for. It is **not** derived:
+> `MIN(advertisements.first_seen_at)` loses the date whenever an Advertisement is purged, and a
+> Property can exist with none at all.
 
 `contacts` has no `first_seen_at`, so its `created_at` stays. `interactions.occurred_at` versus `created_at` is **not** an instance of this — those genuinely differ under backdating, which §6.5 explains and which is correct as written.
 
@@ -711,9 +816,9 @@ Stated so nobody removes them later on the reasoning above.
 |---|---|
 | **`price_history`** | The only table recording something unreconstructible. §19 item 8 is right and nothing here weakens it. Under change-only writes it is ~367 KB/year |
 | **`properties.scam_score`** | Always `NULL`, no reader — but `NULL` costs **0 bytes** (§15's row-width rules), so it is genuinely free, and adding it later to a populated table is a 12-step rebuild |
-| **`contact_properties`** | Keep the table. **Split the enum**, because it is doing two unrelated jobs — see below |
+| **`property_parties`** | Keep the table. **Split the enum**, because it is doing two unrelated jobs — see below |
 
-**`contact_properties` — keep, but the enum is wrong.**
+**`property_parties` — keep, but the enum is wrong.**
 
 - `owner`, `listing_agent`, `co_agent`, `current_tenant` are facts **about the unit**. They belong here.
 - `interested_buyer`, `interested_tenant` are **deal state**. They belong on `deal_parties` (§23.2).
@@ -728,14 +833,14 @@ The symptom that proves the split: the table has `created_at` and **no `ended_on
 |---|---|
 | **New defects** | IG-10 (timestamp dialect), contact identity key, inbox ordering, missing change hash, status carrying two lifecycles |
 | **Tables removed** | `follow_up_inbox` (view), `listings` (already ruled, §6.8), `scrape_runs` (conditional on OQ-2) |
-| **Columns removed** | `price_per_sqft`, `price_at_scrape_cents`, `properties.created_at`, `updated_at` ×2, `scrape_runs` counters ×6, and `contacts.phone`/`email`/`ren_number` (moved, not deleted) |
+| **Columns removed** | `price_per_sqft`, `price_at_scrape_minor`, `properties.created_at`, `updated_at` ×2, `scrape_runs` counters ×6, and `contacts.phone`/`email`/`ren_number` (moved, not deleted) |
 | **Tables proposed** | 5 Tier 0, 13 Tier 1, 4 Tier 2 |
 | **Access patterns added** | AP-17 … AP-24, all `[P] proposed` |
 
 **Suggested order** — each step is a `CREATE TABLE` today and a maintenance window in six months:
 
-1. `schema_migrations` — nothing else is safe to ship without it
-2. §22.1 timestamp guard + §22.2 `contact_identifiers` — both are free while the tables are empty
+1. ~~`schema_migrations`~~ — **cut 2026-09-11**; Laravel's own `migrations` table supplies it
+2. §22.1 timestamp guard (as `strftime`, §22.1a) + §22.2 `contact_identifiers` — both are free while the tables are empty
 3. `portals`, `scrape_targets`, `raw_payloads` — makes the scraper a scraper
 4. `deals`, `appointments`, `tasks` — makes the workspace a workspace
 5. `requirements` + `requirement_matches` — the reason the other two exist

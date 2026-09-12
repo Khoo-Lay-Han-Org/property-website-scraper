@@ -19,10 +19,10 @@
 | Table | Retention | Mechanism |
 |---|---|---|
 | `contacts` | **Forever** | Never deleted except on a PDPA erasure request |
-| `contact_properties`, `interactions` | **Forever** | The book. Irreplaceable |
-| `properties` where `acquisition='own_mandate'` | **Forever** | §7.3 |
-| `properties` where `acquisition='scraped'` | `expired` at 14 days without a sighting; hard-deleted to `properties_archive` at 90 days | §7.3. **Neither step is implemented** — see OQ-4 |
-| `property_sources` | Follows its parent (cascade) | |
+| `property_parties`, `interactions` | **Forever** | The book. Irreplaceable |
+| `properties` with any Mandate, Deal, Interaction or `property_parties` row | **Forever** | §7.3. **Amended 2026-09-11** — was `acquisition='own_mandate'`. The test is whether anyone has *touched* the unit, not how it arrived |
+| `properties` with none of those, and every Advertisement stale | `hidden` at 14 days without a sighting; hard-deleted to `properties_archive` at 90 days | §7.3. **Neither step is implemented** — see OQ-4. **Amended 2026-09-11: the old rule was a data-loss path**, purging worked units silently through `ON DELETE CASCADE` — see §7.3 and ADR 0006 |
+| `advertisements` | Follows its parent (cascade) | |
 | `price_history` | Follows its parent (cascade) — **and this is the uncomfortable part**: purging a scraped listing destroys its price trail, which is precisely what V2 wants (§6.6, OQ-4) | |
 | `scrape_runs` | **90 days**, hard delete | Not implemented |
 
@@ -32,7 +32,7 @@ Malaysia's **PDPA 2010** applies. Personal data here is collected from public po
 
 | Column | Classification | Source | Erasure strategy |
 |---|---|---|---|
-| `contacts.phone` | **PII — direct identifier, and the primary key of a person in this system** | Scraped from public ads, or entered manually | **Hard delete of the `contacts` row**, cascading to `contact_properties` and `interactions`. Soft delete does not satisfy erasure regulation (doctrine §7 cost 5) — which is a further argument for §7.3's no-soft-delete ruling. **⚠️ SUPERSEDED v1.1.0** — this row, and the `email` / `ren_number` rows below, are replaced by `contact_identifiers.value` (§22.2). The erasure strategy is unchanged: cascade from `contacts`. Additional rows for `documents` and `message_outbox` are staged in §23.4 |
+| `contacts.phone` | **PII — direct identifier, and the primary key of a person in this system** | Scraped from public ads, or entered manually | **Hard delete of the `contacts` row**, cascading to `property_parties` and `interactions`. Soft delete does not satisfy erasure regulation (doctrine §7 cost 5) — which is a further argument for §7.3's no-soft-delete ruling. **⚠️ SUPERSEDED v1.1.0** — this row, and the `email` / `ren_number` rows below, are replaced by `contact_identifiers.value` (§22.2). The erasure strategy is unchanged: cascade from `contacts`. Additional rows for `documents` and `message_outbox` are staged in §23.4 |
 | `contacts.name` | PII — direct identifier | as above | cascade with the row |
 | `contacts.email` | PII — direct identifier | as above | cascade with the row |
 | `contacts.ren_number` | PII — **regulator-issued** professional identifier | public agent registry | cascade with the row |
@@ -62,13 +62,19 @@ index_size = Σ over indexes of (key_bytes + rowid_varint 1-9 + ~4 B cell) × ro
 | Table | Rows @ 12mo | Row width | Table | Indexes | **Total** |
 |---|---|---|---|---|---|
 | `price_history` **(policy b, change-only)** | ~5,400 | 40 B | 216 KB | 151 KB | **367 KB** |
-| `properties` | ~4,000 | 554 B | 2.2 MB | 470 KB | **2.7 MB** |
+| `properties` | ~4,000 | 534 B | 2.1 MB | 296 KB | **2.4 MB** |
 | `interactions` | ~7,300 | 153 B | 1.1 MB | 241 KB | **1.3 MB** |
-| `property_sources` | ~5,600 | 163 B | 913 KB | 190 KB | **1.1 MB** |
+| `advertisements` | ~5,600 | 163 B | 913 KB | 297 KB | **1.2 MB** |
 | `contacts` | ~1,300 | 208 B | 270 KB | 53 KB | **323 KB** |
-| `contact_properties` | ~2,000 | 84 B | 168 KB | 66 KB | **234 KB** |
+| `property_parties` | ~2,000 | 84 B | 168 KB | 66 KB | **234 KB** |
 | `scrape_runs` | ~1,095 | 115 B | 126 KB | 33 KB | **159 KB** |
-| | | | | **12-month total** | **≈ 6.2 MB** |
+| | | | | **12-month total** | **≈ 6.0 MB** |
+
+> **⚠️ Amended 2026-09-12.** Two rows moved. `properties` loses `last_seen_at` and
+> `idx_properties_seen`, and `advertisements` gains the same column inside a widened
+> `idx_advertisements_property` (`03-entities.md` §6.2, §6.3). The transfer is close to a wash —
+> the whole-database figure moves from ≈ 6.2 MB to ≈ 6.0 MB — which is the point: the cut was
+> made for correctness, and it did not have to be paid for in space.
 
 *All row counts `[ESTIMATED]` per §6; all row widths `[ESTIMATED]` with the per-table arithmetic shown inline in §6.1-6.7 so a reader can recompute them.*
 
@@ -76,7 +82,7 @@ index_size = Σ over indexes of (key_bytes + rowid_varint 1-9 + ~4 B cell) × ro
 
 | Scenario | `price_history` @ 12mo | **Whole database @ 12mo** |
 |---|---|---|
-| Change-only writes (**recommended**) | 367 KB | **≈ 6.2 MB** |
+| Change-only writes (**recommended**) | 367 KB | **≈ 6.0 MB** |
 | Every observation written | 139 MB | **≈ 145 MB** |
 | Every observation, at the 100x checkpoint | **13.9 GB/yr** | **≈ 14.6 GB** |
 
@@ -129,6 +135,23 @@ The move is close to free, which is what makes it the right call rather than a p
 
 **What keeps Turso Cloud in the picture:** the n8n container talks to the database over the HTTP `/v2/pipeline` API, and an embedded file is not reachable that way. If n8n remains the ingest path, the remote stays. §17 offers the alternative — put a single writer in front of it — which is better for IG-7 (foreign keys per connection) regardless of engine.
 
+> ### ⚠️ Reconciled 2026-09-11 — `STRICT` is taken, and the engine question is closed
+>
+> This section recommends `STRICT` and moving the embedded path to stock SQLite. **Both are now
+> rulings rather than recommendations** — see ADR 0005. SQLite runs in development, CI and
+> production; there is no second engine anywhere, and CI needs no service container because it
+> inherits the same file database.
+>
+> Two corrections to what is written above. **The version floor that matters is the driver's,
+> not the shell's** — migrations run through `pdo_sqlite` 3.45.2, not the CLI's 3.51.0
+> `[MEASURED 2026-09-02: sqlite3 CLI 3.51.0 · pdo_sqlite 3.45.2 · PHP 8.4.23]`. `STRICT` needs
+> 3.37, so there is headroom, but a future feature must be checked against the driver.
+>
+> And `STRICT` is worth less than this section claims in one specific place. It constrains
+> **storage class, not meaning**: a `TEXT` column under `STRICT` accepts a `T`-form timestamp
+> and the string `banana` equally. It contributes nothing to IG-10, which is closed by the
+> `strftime` `CHECK` instead (§22.1a).
+
 **When to revisit Postgres — the actual triggers, so nobody has to guess:**
 
 | Trigger | Why it forces the move |
@@ -159,8 +182,9 @@ Per the hard constraint, **I do not write migration files.** The DDL below is re
 
 | # | Change | Lock / duration | Blocks | Abort-safe? | Forward fix |
 |---|---|---|---|---|---|
-| **M1** | Fix `schema.sql` **before it is ever applied**: drop `AUTOINCREMENT` (§4.1); `price REAL` → `price_cents INTEGER` (§4.2); `price_history.website TEXT` → `property_source_id` FK (§6.6); add `UNIQUE (property_source_id, observed_at)`; add `CHECK` on `property_sources.website` (IG-6); add the lat/lng presence-pair check (§6.2); name every constraint (§9.3); drop the four orphan indexes (§10.3); add `idx_properties_feed` (§9.1); fix the misleading `floor`/`floors` comment (§2.3) | none — edits a file | nothing | **yes** | Edit again. Nothing is deployed |
-| **M1b** *(v1.1.0)* | Also in `schema.sql`, before first apply: add the timestamp-format `CHECK` to every instant column (§22.1, IG-10); replace `contacts.phone`/`email`/`ren_number` with `contact_identifiers` (§22.2); rename `status` → `listing_status` and drop `under_offer`/`closed` from its `CHECK` (§22.5); add `content_hash` + `parser_version` to `property_sources` (§22.4); drop `price_per_sqft`, `price_at_scrape_cents`, `properties.created_at` and both `updated_at` columns (§24.3–§24.6); create `schema_migrations` (§23.1) | none — edits a file | nothing | **yes** | Edit again. Nothing is deployed |
+| **M1** | Fix `schema.sql` **before it is ever applied**: drop `AUTOINCREMENT` (§4.1); `price REAL` → `price_cents INTEGER` (§4.2); `price_history.website TEXT` → `property_source_id` FK (§6.6); add `UNIQUE (property_source_id, observed_at)`; add `CHECK` on `advertisements.website` (IG-6); add the lat/lng presence-pair check (§6.2); name every constraint (§9.3); drop the four orphan indexes (§10.3); add `idx_properties_feed` (§9.1); fix the misleading `floor`/`floors` comment (§2.3) | none — edits a file | nothing | **yes** | Edit again. Nothing is deployed |
+| **M1b** *(v1.1.0)* | Also in `schema.sql`, before first apply: add the timestamp-format `CHECK` to every instant column (§22.1, IG-10); replace `contacts.phone`/`email`/`ren_number` with `contact_identifiers` (§22.2); rename `status` → `listing_status` and drop `under_offer`/`closed` from its `CHECK` (§22.5); add `content_hash` + `parser_version` to `advertisements` (§22.4); drop `price_per_sqft`, `price_at_scrape_cents`, `properties.created_at` and both `updated_at` columns (§24.3–§24.6). **Amended 2026-09-11:** the timestamp guard is the `strftime` round-trip, not the `GLOB` pattern (§22.1a), and `schema_migrations` is **cut** — Laravel ships its own `migrations` table (§23.1) | none — edits a file | nothing | **yes** | Edit again. Nothing is deployed |
+| **M1c** *(2026-09-11, extended 2026-09-12)* | Also in `schema.sql`, before first apply — the ADR set: **delete `properties.acquisition`** and `idx_properties_acq` with it (ADR 0006); rename `contact_properties` → **`property_parties`** (a table rebuild in SQLite, not a rename); `price_cents` → **`price_minor`** plus `currency_code TEXT NOT NULL DEFAULT 'MYR'` with a membership `CHECK` (ADR 0007); create **`mandates`** with `ux_mandates_open` (ADR 0009); create **`locations`** and **`location_postcodes`**, add `properties.location_id`, `properties.postcode` and `properties.location_raw` (ADR 0008); `listing_status` values become `visible`/`hidden` (ADR 0003 amendment); add `deals.mandate_id` and `deals.commission_minor`, `mandates.commission_rate_bp` (ADR 0010). **Added 2026-09-12 — the three items the ADR set left undecided:** rename `property_sources` → **`advertisements`** and `idx_sources_property` → `idx_advertisements_property` (another rebuild, `02-access-patterns.md` §4.3); **delete `properties.last_seen_at`** and `idx_properties_seen` with it, widening `idx_advertisements_property` to `(property_id, last_seen_at)` (§6.2); `deals.commission_split_pct REAL` → **`commission_split_bp INTEGER`** with a `BETWEEN 0 AND 10000` `CHECK` (ADR 0010 amendment) | none — edits a file | nothing | **yes** | Edit again. Nothing is deployed |
 | **M2** | Decide and document the `price_history` write policy: **change-only** (§6.6). **v1.1.0 amends:** the first observation for a new source must **always** be written, not only on change — §24.4's cut depends on it | none — a decision | nothing | **yes** | — |
 | **M3** | Apply the corrected `schema.sql` to a **fresh** database file. Set `PRAGMA journal_mode=WAL`, `synchronous=NORMAL`, and establish `foreign_keys=ON` + `busy_timeout=5000` as per-connection defaults in application code (IG-7) | exclusive on a new empty file — **milliseconds** | nothing | **yes** — pure expand | Delete the file and redo |
 | **M4** | Move the Python path from `pyturso` to stdlib `sqlite3`; adopt `STRICT` tables (§16.2). Update the two tests asserting `turso.IntegrityError` | none | nothing | **yes** | Revert the import |
@@ -182,7 +206,7 @@ Per the hard constraint, **I do not write migration files.** The DDL below is re
 
 ```sql
 -- Turso Database 0.7.x / stock SQLite 3.37+ — AP-04
-INSERT INTO property_sources
+INSERT INTO advertisements
        (property_id, website, advertisement_id, listing_url, listed_at,
         price_at_scrape_cents, first_seen_at, last_seen_at)
 VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), datetime('now'))
@@ -192,7 +216,13 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), datetime('now'))
        listing_url           = excluded.listing_url;
 ```
 
-This is what makes `last_seen_at` meaningful, and therefore what makes the expiry sweep in §7.3 possible. Verified supported on this engine, including `excluded.*` references (§2.7).
+This is what makes `advertisements.last_seen_at` meaningful, and therefore what makes the staleness sweep in §7.3 possible. Verified supported on this engine, including `excluded.*` references (§2.7).
+
+> **⚠️ Note 2026-09-12.** This statement is now the **only** writer of liveness anywhere in the
+> schema. `properties.last_seen_at` was cut precisely because no equivalent statement ever
+> maintained it (`03-entities.md` §6.2). Any future ingest path that stops touching this column
+> silently disables the sweep, so it belongs in the same transaction as the row it describes and
+> nowhere else.
 
 ---
 
@@ -226,18 +256,19 @@ Read as:  SEARCH … USING INDEX = good · SCAN = full scan · USE TEMP B-TREE /
 Run ANALYZE after the first bulk load — without sqlite_stat1 the planner guesses (profile §3).
 ```
 
-- [ ] **AP-02** — `SELECT property_id FROM property_sources WHERE website=? AND advertisement_id=?` → `SEARCH property_sources USING INDEX sqlite_autoindex_property_sources_1 (website=? AND advertisement_id=?)`; no `SCAN`.
+- [ ] **AP-02** — `SELECT property_id FROM advertisements WHERE website=? AND advertisement_id=?` → `SEARCH advertisements USING INDEX sqlite_autoindex_advertisements_1 (website=? AND advertisement_id=?)`; no `SCAN`.
 - [ ] **AP-03** — `SELECT id FROM contacts WHERE phone=?` → `SEARCH contacts USING INDEX ... (phone=?)`; no `SCAN`.
-- [ ] **AP-04** — the §17 upsert → conflict resolved via the `(website, advertisement_id)` unique index; **no `SCAN property_sources`**.
+- [ ] **AP-04** — the §17 upsert → conflict resolved via the `(website, advertisement_id)` unique index; **no `SCAN advertisements`**.
 - [ ] **AP-05** — the keyset query in §9.1 → `SEARCH properties USING INDEX idx_properties_feed (area=? AND listing_type=?)`; **no `SCAN properties`**; **no `USE TEMP B-TREE FOR ORDER BY`** — the index must supply the order. *If a sort node appears, the `first_seen_at DESC` position in the index is wrong; re-check the column order against §9.1.*
 - [ ] **AP-06** — `SELECT * FROM follow_up_inbox WHERE bucket='owed_reply' ORDER BY stale_hours DESC` → the inner aggregate uses `idx_interactions_contact`; a `SCAN contacts` on the outer `LEFT JOIN` is **expected and acceptable** (it is a full classification by definition); **no nested-loop join over an unindexed inner relation**.
 - [ ] **AP-07** — `SELECT * FROM interactions WHERE contact_id=? ORDER BY occurred_at DESC LIMIT 30` → `SEARCH interactions USING INDEX idx_interactions_contact (contact_id=?)`; **no sort node** — the index is already `DESC`.
-- [ ] **AP-08** — `SELECT * FROM contact_properties WHERE property_id=?` → `SEARCH ... USING INDEX idx_cp_property`.
-- [ ] **AP-09** — `SELECT * FROM contact_properties WHERE contact_id=?` → `SEARCH ... USING INDEX sqlite_autoindex_contact_properties_1` (the unique key's left prefix). *If this reports `SCAN`, the `idx_cp_contact` drop in §10.3 was wrong — revert it.*
-- [ ] **AP-10** — `SELECT * FROM properties WHERE acquisition='own_mandate' AND status=?` → `SEARCH properties USING INDEX idx_properties_acq`.
-- [ ] **AP-11** — `SELECT id FROM properties WHERE acquisition='scraped' AND last_seen_at < ?` → `SEARCH properties USING INDEX idx_properties_seen (last_seen_at<?)`.
+- [ ] **AP-08** — `SELECT * FROM property_parties WHERE property_id=?` → `SEARCH ... USING INDEX idx_pp_property`.
+- [ ] **AP-09** — `SELECT * FROM property_parties WHERE contact_id=?` → `SEARCH ... USING INDEX sqlite_autoindex_property_parties_1` (the unique key's left prefix). *If this reports `SCAN`, the `idx_pp_contact` drop in §10.3 was wrong — revert it.*
+- [ ] **AP-10** — ⚠️ **superseded 2026-09-11.** `idx_properties_acq` no longer exists. The check becomes: the plan leads from `mandates`, not from `properties`. *If `properties` leads, the join was written backwards.*
+- [ ] **AP-11** — the §7.3 sweep → `SCAN properties` plus `CORRELATED SCALAR SUBQUERY` showing `SEARCH a USING COVERING INDEX idx_advertisements_property (property_id=? AND last_seen_at>?)`; **no `SCAN advertisements`**. `[MEASURED 2026-09-12: stock SQLite, empty tables — plan reproduced exactly. The index is covering, so the subquery never touches the table]` **Amended 2026-09-11** — the `acquisition` predicate is gone; the purge conditions are checked in the Action, not in this probe. **Amended 2026-09-12** — `properties.last_seen_at` and `idx_properties_seen` are cut, so the probe moves to `advertisements`; the outer `SCAN properties` is expected and is what the `< 5 s` daily budget is set against.
+- [ ] **AP-05/AP-08 (Location)** — ⚠️ **added 2026-09-11.** Any subtree filter must report `SEARCH locations USING COVERING INDEX (path>? AND path<?)`. **Bind a real value before reading this plan**: `EXPLAIN QUERY PLAN` reports `SCAN` for `path GLOB ?` purely because nothing is bound, and a bare-`?` plan is not evidence. A plan that reports `SCAN` with a value bound means the prefix was built from a column expression instead of a bound parameter — see ADR 0008.
 - [ ] **AP-12** — `SELECT * FROM scrape_runs WHERE website=? ORDER BY started_at DESC LIMIT 10` → `SEARCH ... USING INDEX idx_scrape_runs`; no sort node.
-- [ ] **AP-13** — `SELECT price_cents, observed_at FROM price_history WHERE property_id=? ORDER BY observed_at DESC` → `SEARCH ... USING INDEX idx_price_history`; no sort node.
+- [ ] **AP-13** — `SELECT price_minor, observed_at FROM price_history WHERE property_id=? ORDER BY observed_at DESC` → `SEARCH ... USING INDEX idx_price_history`; no sort node.
 - [ ] **AP-14** — `SELECT id FROM properties WHERE area=? AND bedrooms=? AND size_sqft BETWEEN ? AND ?` → `SEARCH properties USING INDEX idx_properties_dedup (area=? AND bedrooms=? AND size_sqft>? AND size_sqft<?)`.
 - [ ] **AP-15** — `SELECT * FROM contacts WHERE name LIKE ?` → with a **prefix** pattern (`'Ahmad%'`), `SEARCH contacts USING INDEX idx_contacts_name`. **With an infix pattern (`'%Ahmad%'`) expect `SCAN` — that is not fixable with a B-tree** and needs FTS5 (§9.2). Confirm which one the UI actually sends before keeping this index.
 - [ ] **Cross-cutting** — after each of the four index drops in §10.3, re-run the AP that the dropped index might have been silently serving; confirm no plan regressed from `SEARCH` to `SCAN`.
