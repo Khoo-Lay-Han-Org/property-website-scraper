@@ -10,12 +10,12 @@ Invariants the engine cannot enforce, or does not currently.
 
 | ID | Invariant | Why the DDL cannot hold it | Enforced instead at | Risk if bypassed |
 |---|---|---|---|---|
-| **IG-1** | Every scraped listing has a portal advertisement id | `advertisement_id` is `NOT NULL` in V1, which is correct — but the producer currently binds `NULL` (§2.4). In V0's `listing_id BIGINT UNIQUE NOT NULL`, SQLite treats `NULL`s as **distinct** in a unique index, so a nullable variant would admit unlimited identity-less duplicates | The scraper's extractor must fail the item, not emit `null` | Unbounded duplicate rows that no dedup query can collapse — the exact failure the whole `property_sources` design exists to prevent |
+| **IG-1** | Every scraped listing has a portal advertisement id | `advertisement_id` is `NOT NULL` in V1, which is correct — but the producer currently binds `NULL` (§2.4). In V0's `listing_id BIGINT UNIQUE NOT NULL`, SQLite treats `NULL`s as **distinct** in a unique index, so a nullable variant would admit unlimited identity-less duplicates | The scraper's extractor must fail the item, not emit `null` | Unbounded duplicate rows that no dedup query can collapse — the exact failure the whole `advertisements` design exists to prevent |
 | **IG-2** | Phones are E.164-normalised digits; emails lowercased | SQLite has no `CHECK` that can express "is a valid Malaysian mobile" cheaply, and normalisation is inherently a transform, not a predicate. A partial guard **is** expressible and should be added: `CHECK (phone IS NULL OR (phone GLOB '6[0-9]*' AND length(phone) BETWEEN 10 AND 13))` | Python, before insert — the `schema.sql` header already declares this contract | **A unique index over unnormalised input is decoration** (doctrine §4). `0162339069` and `60162339069` are the same person and two rows. Deduplication silently stops working, which is the single most valuable thing this database does |
 | **IG-3** | `area` values are a controlled vocabulary | Free-text `TEXT`. "Kajang", "kajang", "Selangor - Kajang" and "Kajang, Selangor" are four different areas to an index. The live pinned payload contains `"Selangor - Kajang"` in `full_address` and nothing in `area` | Python normalisation, then a `CHECK` list or a lookup table once the vocabulary is known | AP-05 and AP-14 both lead with `area`. If it is inconsistent, the feed index and the dedup index are both partially blind — queries return subsets and nobody notices |
 | **IG-4** | `updated_at` reflects the last write | The baseline mechanism is a trigger (doctrine §8), and **triggers are experimental on this engine** (§2.7). `DEFAULT datetime('now')` fires on insert only | Every application write path must set it explicitly | `updated_at` silently equals `created_at` forever — losing the cheapest debugging column that exists (doctrine §13). This is the concrete cost of the engine choice in §16 |
-| **IG-5** | `scrape_runs` counters equal the rows the run produced | No `scrape_run_id` on `property_sources`, so there is nothing to count against | Nothing today | A computed value with no maintenance mechanism (doctrine §13). Scrape health metrics drift from reality undetectably — you learn the scraper broke by noticing the feed is stale, not from the dashboard |
-| **IG-6** | `website` is one of four known portals | `property_sources.website` has **no `CHECK`**, unlike every other enumerated column in the schema. An oversight rather than a decision — it is trivially expressible | — | `'mudah'`, `'Mudah'`, `'mudah.my'` become three portals. Breaks the `UNIQUE (website, advertisement_id)` dedup key, which is the whole point of the table. **Add the `CHECK`** — it is one line and costs nothing |
+| **IG-5** | `scrape_runs` counters equal the rows the run produced | No `scrape_run_id` on `advertisements`, so there is nothing to count against | Nothing today | A computed value with no maintenance mechanism (doctrine §13). Scrape health metrics drift from reality undetectably — you learn the scraper broke by noticing the feed is stale, not from the dashboard |
+| **IG-6** | `website` is one of four known portals | `advertisements.website` has **no `CHECK`**, unlike every other enumerated column in the schema. An oversight rather than a decision — it is trivially expressible | — | `'mudah'`, `'Mudah'`, `'mudah.my'` become three portals. Breaks the `UNIQUE (website, advertisement_id)` dedup key, which is the whole point of the table. **Add the `CHECK`** — it is one line and costs nothing |
 | **IG-7** | Foreign keys are actually enforced | `PRAGMA foreign_keys = ON` **defaults to OFF and must be set on every connection** (profile §4/§10 — "the single most common SQLite data-integrity failure"). `schema.sql` sets it at the top of the *script*, which covers the connection that applies the schema and **no other**. The n8n path opens a fresh HTTP connection per request and never sets it | Every connection, explicitly, in application code | Every `ON DELETE CASCADE` and `SET NULL` in §7.1 silently does nothing. Orphan rows accumulate and the schema's referential guarantees are fiction. **This is the highest-severity item in this table** |
 | **IG-8** | No two properties are the same real-world unit | Genuine fuzzy matching — address strings, size tolerance, coordinate proximity. Not expressible as a constraint in any engine | Python, narrowed by `idx_properties_dedup` (AP-14) | Duplicate units in the feed. Contained, not prevented — which is the correct design; AP-14 exists precisely to make the Python step cheap |
 | **IG-9** | Overlapping-tenancy rules (no two `current_tenant` roles on one unit at once) | Requires an exclusion constraint. **SQLite family has none** (profile §4). Not currently a modelled requirement, but named because check-then-insert in the application is a race condition, always | Serialized write path. The single-writer model makes this materially safer here than on a multi-writer engine | Only relevant if tenancy periods get modelled in V2 |
@@ -39,11 +39,17 @@ Invariants the engine cannot enforce, or does not currently.
 ```
 
 ```sql
--- Turso Database 0.7.x / stock SQLite 3.37+
+-- ⚠️ SUPERSEDED 2026-09-11. Current form:
+--   ON properties (location_id, listing_type, first_seen_at DESC, price_minor)
+--   WHERE listing_status = 'visible'
+-- plus a NOT EXISTS against ux_mandates_open in the query. See ADR 0006 and ADR 0008.
 CREATE INDEX idx_properties_feed
     ON properties (area, listing_type, first_seen_at DESC, price_cents)
  WHERE acquisition = 'scraped' AND status = 'active';
 ```
+
+The column-order reasoning below is unaffected by the rename — `location_id` takes `area`'s
+place as the leading equality and `price_minor` takes `price_cents`' place as the range.
 
 Column order follows doctrine §6 — **equality predicates first (`area`, `listing_type`), then the sort column (`first_seen_at DESC`), then the range (`price_cents`)**. Putting `price_cents` before `first_seen_at` would still let the index be *used* but would reintroduce the sort, which is the expensive half. The trade-off, stated plainly: with this ordering the price ceiling is a residual filter applied to index entries rather than a seek bound, so a very selective price cap reads more index entries than strictly necessary. That is the right trade here because the sort feeds pagination and the scan is bounded by `LIMIT`.
 
@@ -70,7 +76,7 @@ Stating these prevents someone adding them "for safety" later (doctrine §13).
 |---|---|
 | `properties.facilities` | Nothing filters on it `[MEASURED: no `WHERE` clause references it anywhere in the repo or workflows @ 2026-08-06]`. An expression index over `json_extract` becomes correct the day "has a pool" is a filter — not before |
 | `properties.status` alone | Five values, ~4,000 rows. Doctrine §6: use a partial index instead — which §9.1 does |
-| `properties.acquisition` alone | Two values. Already the leading column of `idx_properties_acq` and the partial predicate of the feed index |
+| ~~`properties.acquisition` alone~~ | ⚠️ **Moot 2026-09-11** — the column is deleted and `idx_properties_acq` with it (ADR 0006). What replaces the entry: **`mandates.property_id` alone** is not indexed either, because `ux_mandates_open` already leads with it |
 | `properties.latitude` / `longitude` | Proximity search is not an access pattern yet. When it is, it needs an **R\*Tree virtual table** (profile §3), not a B-tree on either column — a B-tree on latitude cannot answer "within 2 km" |
 | `properties.title`, `summary` | Substring search is not an access pattern. When it is, it needs **FTS5** (profile §3), not a B-tree — `LIKE '%x%'` cannot use an ordered index |
 | `interactions.occurred_at` alone | Always queried with `contact_id`, and `idx_interactions_contact(contact_id, occurred_at DESC)` covers it by left prefix |
@@ -80,7 +86,7 @@ Stating these prevents someone adding them "for safety" later (doctrine §13).
 
 ### 9.3 Constraint naming
 
-Every V1 `UNIQUE` and `CHECK` is anonymous — the engine generates the name. Doctrine §2: *you cannot drop what you cannot name*, and the generated name differs between engines and sometimes between versions. Since these are all `CREATE TABLE` recreations anyway (§17), name them at creation: `uq_property_sources_website_ad`, `ck_properties_status`, and so on. Cost: zero. Benefit: the day one needs changing, it is one statement instead of a 12-step rebuild to find out what it was called.
+Every V1 `UNIQUE` and `CHECK` is anonymous — the engine generates the name. Doctrine §2: *you cannot drop what you cannot name*, and the generated name differs between engines and sometimes between versions. Since these are all `CREATE TABLE` recreations anyway (§17), name them at creation: `uq_advertisements_website_ad`, `ck_properties_status`, and so on. Cost: zero. Benefit: the day one needs changing, it is one statement instead of a 12-step rebuild to find out what it was called.
 
 ---
 
@@ -91,7 +97,7 @@ Every V1 `UNIQUE` and `CHECK` is anonymous — the engine generates the name. Do
 | AP | Served by | Status |
 |---|---|---|
 | AP-01 | `UNIQUE(website, advertisement_id)` + `UNIQUE(contacts.phone)` — **but only if split into two probes**; see the orphan analysis below | ⚠️ partial |
-| AP-02 | `UNIQUE (property_sources.website, advertisement_id)` | ✅ |
+| AP-02 | `UNIQUE (advertisements.website, advertisement_id)` | ✅ |
 | AP-03 | `UNIQUE (contacts.phone)` | ✅ |
 | AP-04 | `UNIQUE (website, advertisement_id)` as the upsert conflict target | ✅ |
 | AP-05 | **nothing today** → `idx_properties_feed` (proposed, §9.1) | ❌ **orphan AP** |
@@ -99,8 +105,8 @@ Every V1 `UNIQUE` and `CHECK` is anonymous — the engine generates the name. Do
 | AP-07 | `idx_interactions_contact` | ✅ |
 | AP-08 | `idx_cp_property` | ✅ |
 | AP-09 | `UNIQUE (contact_id, property_id, role)` by left prefix | ✅ |
-| AP-10 | `idx_properties_acq (acquisition, status)` | ✅ |
-| AP-11 | `idx_properties_seen (last_seen_at)` | ✅ |
+| AP-10 | ~~`idx_properties_acq (acquisition, status)`~~ — **deleted 2026-09-11** with the column; AP-10 leads from `mandates` (ADR 0006) | ✅ |
+| AP-11 | ~~`idx_properties_seen (last_seen_at)`~~ — **deleted 2026-09-12** with the column; AP-11 probes `idx_advertisements_property (property_id, last_seen_at)` (`03-entities.md` §6.2) | ✅ |
 | AP-12 | `idx_scrape_runs (website, started_at DESC)` | ✅ |
 | AP-13 | `idx_price_history (property_id, observed_at DESC)` | ✅ |
 | AP-14 | `idx_properties_dedup (area, bedrooms, size_sqft)` | ✅ |
@@ -115,13 +121,13 @@ Every V1 `UNIQUE` and `CHECK` is anonymous — the engine generates the name. Do
 | `idx_contacts_phone` | — | **DROP — orphan** |
 | `idx_contacts_source` | — | **DROP — orphan** |
 | `idx_contacts_name` | AP-15 (partial) | keep conditionally |
-| `idx_properties_acq` | AP-10 | keep |
+| `idx_properties_acq` | AP-10 | ~~keep~~ **DELETED 2026-09-11** — ADR 0006 |
 | `idx_properties_area` | — | **DROP — orphan (left-prefix redundant)** |
 | `idx_properties_price` | AP-05 (insufficient) | **DROP** once `idx_properties_feed` lands |
-| `idx_properties_seen` | AP-11 | keep |
+| `idx_properties_seen` | AP-11 | ~~keep~~ **DELETED 2026-09-12** — its only column is cut |
 | `idx_properties_dedup` | AP-14 | keep |
 | `UNIQUE (website, advertisement_id)` | AP-02, AP-04 | keep |
-| `idx_sources_property` | AP-08 + FK integrity | keep |
+| `idx_advertisements_property` | AP-08, AP-11 + FK integrity | keep — **widened 2026-09-12** to `(property_id, last_seen_at)` so it also serves the staleness sweep |
 | `UNIQUE (contact_id, property_id, role)` | AP-09 | keep |
 | `idx_cp_contact` | — | **DROP — orphan (left-prefix redundant)** |
 | `idx_cp_property` | AP-08 + FK integrity | keep |

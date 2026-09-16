@@ -11,7 +11,15 @@
 - **the book** — own mandates, contacts, the roles people play on deals, every interaction, and the follow-up queue derived from them. Small, high-value, hand-curated, irreplaceable if lost.
 - **the feed** — listings scraped from mudah.my, PropertyGuru, iProperty and EdgeProp. Large, low-value per row, entirely reconstructible by re-scraping.
 
-The two halves share one `properties` table separated by an `acquisition` discriminator. That is a deliberate choice and is defended in §19.
+The two halves share one `properties` table. That is a deliberate choice and is defended in §19.
+
+> ⚠️ **AMENDED 2026-09-11 — the one table survives, the discriminator does not.** There is no
+> `acquisition` column. A Property is in the book while an open Mandate on it exists, and in the
+> feed while any Advertisement of it exists — which means **both at once is routine**, and the
+> agent winning a mandate on a unit they also advertise themselves is not an edge case. See
+> [ADR 0006](../adr/0006-acquisition-is-deleted-the-book-and-the-feed-are-derived.md) and the
+> amendment to [ADR 0001](../adr/0001-book-and-feed-share-one-property-table.md). Everywhere
+> below that reads `acquisition = 'scraped'` or `'own_mandate'` is superseded by that ADR.
 
 **Non-goals.** n8n's own operational database (workflow definitions, execution history) lives in the `n8n_data` volume and is n8n's business, not ours. Google Sheets is a presentation sink, not a source of truth. The Ollama model layer holds no state. Analytical/BI modelling is out of scope — at the volumes projected in §15 the transactional tables answer every analytical question directly.
 
@@ -41,7 +49,7 @@ The two halves share one `properties` table separated by an `acquisition` discri
 > ⚠️ **DRIFT (P0 vs P3) — the live database and the repo schema have no table in common.**
 > `listings.db` contains exactly one domain table, `listings`, with 39 columns
 > `[MEASURED: PRAGMA table_info(listings) @ 2026-08-06]`. `schema.sql` declares `contacts`,
-> `properties`, `property_sources`, `contact_properties`, `interactions`, `price_history`,
+> `properties`, `advertisements`, `property_parties`, `interactions`, `price_history`,
 > `scrape_runs` and the `follow_up_inbox` view. **Zero overlap.** Per Gate 1, P0 is fact:
 > what is deployed is V0. P3 is intent: V1 is a design, not a deployment.
 
@@ -123,7 +131,7 @@ The live table's only index is the implicit one behind `listing_id BIGINT UNIQUE
 > The stated identity of a portal listing is **`(website, advertisement_id)`**. mudah ad `115402662`
 > and an iProperty ad that happens to share that integer are different listings, and the live
 > schema would reject the second as a duplicate. `schema.sql` gets this right with
-> `UNIQUE (website, advertisement_id)` on `property_sources`. The live table does not.
+> `UNIQUE (website, advertisement_id)` on `advertisements`. The live table does not.
 >
 > Confirmed at plan level — filtering on both columns still probes the single-column index:
 > ```

@@ -7,16 +7,17 @@ mandates, and **the feed**, which is everything scraped from the portals.
 ## The two halves
 
 **The Book**:
-Everything the agent owns and is accountable for — their contacts, their own mandates, their deals, their follow-ups. The irreplaceable half.
+Everything the agent owns and is accountable for — their contacts, their own mandates, their deals, their follow-ups. The irreplaceable half. A Property is in the book while an open Mandate on it exists.
 _Avoid_: CRM, my listings
 
 **The Feed**:
-The scraped inventory the agent browses and prospects from. Replaceable by definition — it can be re-scraped.
+The scraped inventory the agent browses and prospects from. Replaceable by definition — it can be re-scraped. A Property is in the feed while any Advertisement of it exists.
 _Avoid_: the scrape, search results
 
-**Acquisition**:
-How a Property came to be known to us — won as the agent's own mandate, or observed on a portal. The single attribute that separates the book from the feed.
-_Avoid_: origin, type, ownership
+> The two halves are **not** exclusive, and there is no attribute that assigns a Property to
+> one of them. A unit the agent holds a mandate on and also advertises on a portal themselves
+> is in both, and that is routine. Asking which half a Property belongs to is asking about a
+> Mandate and an Advertisement, never about the Property.
 
 ## Properties and advertisements
 
@@ -33,15 +34,23 @@ A third-party property marketplace the feed is scraped from — mudah, PropertyG
 _Avoid_: website, site, source
 
 **Location**:
-A named place in the Malaysian administrative hierarchy — state, district, mukim, township. A Property sits in exactly one, and every Location knows its parent. Replaces free text so that two spellings of the same place stop being two places.
-_Avoid_: area, region, locality, address
+A named place in the Malaysian administrative hierarchy — a state, a district, or a locality, and nothing below a locality. A Property sits in exactly one, and every Location knows its parent. Replaces free text so that two spellings of the same place stop being two places.
+_Avoid_: area, region, township, mukim, address
+
+**Locality**:
+The third and lowest Location level — the name an agent and a buyer both use for a place, such as Sungai Long or KL Eco City. Marketing vocabulary rather than administrative, which is why some localities exist on no map and have to be added as the portals reveal them.
+_Avoid_: township, neighbourhood, taman, suburb
+
+**Postcode**:
+The five-digit Malaysian postal code found in a scraped address. Input to resolving a Location, never a way for a person to search — it settles which state and district a unit is in and narrows nothing below them.
+_Avoid_: poskod, zip, postal code
 
 **Project**:
 A named development a Property belongs to — a condominium, a serviced apartment block, or a landed scheme. Not every Property has one; a shoplot or an individual bungalow may stand alone.
 _Avoid_: development, building, block, scheme, taman
 
 **Mandate**:
-The agent's right to market a Property, granted by an owner. Exclusive or open, with an appointment date, an expiry and an agreed commission rate. A Property acquired as an own mandate has one; a scraped Property does not. Distinct from a Deal — one Mandate can produce several transaction attempts, and a Mandate that expires unsold produced none.
+The agent's right to market a Property, granted by an owner. Exclusive or open, with an appointment date, an expiry and an agreed commission rate. At most one Mandate on a Property is open at a time, and a Property may have had several over the years. Distinct from a Deal — one Mandate can produce several transaction attempts, and a Mandate that expires unsold produced none.
 _Avoid_: listing agreement, instruction, appointment, authority
 
 **Price History**:
@@ -74,6 +83,14 @@ _Avoid_: party type, role
 One transaction attempt on one Property. A unit that fails to sell and is relisted is a second Deal. Commission lives here, and commission is why the agent opens the application.
 _Avoid_: case, transaction, opportunity, pipeline
 
+**Co-broke**:
+A Deal worked jointly with an agent from another agency, with the commission split between them. The other agent is a Contact in the co-agent Deal Role, and there is no Mandate of our own when the other agency holds the instruction.
+_Avoid_: co-agency, joint deal, split deal
+
+**Commission**:
+What the agent earned on a Deal. Distinct from the rate a Mandate was granted at, which is only the agreed default — a split, a discount to close or a referral out all change what was earned without changing what was agreed.
+_Avoid_: fee, cut, brokerage
+
 **Tenancy**:
 An occupancy of a Property by a Contact for a term — start, end, rent and deposit. Created by a Deal that completed, but outlives it: the Deal is the transaction attempt, the Tenancy is what the attempt produced.
 _Avoid_: lease, rental, agreement, contract
@@ -82,9 +99,17 @@ _Avoid_: lease, rental, agreement, contract
 Where a Deal has reached, from first lead through to completed or lost. Owned by the agent, never by a machine.
 _Avoid_: status, state
 
+**Mandate Status**:
+Where a Mandate stands — open, withdrawn, expired or completed. Read from the Mandate's own dates rather than stored, so "expired" is true of the moment it is asked and never of a moment a sweep last ran.
+_Avoid_: active, mandate state, listing status
+
 **Listing Status**:
-Whether a Property is still being marketed — active, expired or withdrawn. Owned by the expiry sweep and the owner's decision, never by the agent's deal progress.
-_Avoid_: status, state
+Whether a Property is still being marketed — visible or hidden. Owned by the staleness sweep and the owner's decision, never by the agent's deal progress.
+_Avoid_: status, state, active, expired, withdrawn
+
+> **`active`, `expired` and `withdrawn` belong to a Mandate and to nothing else.** They
+> previously described a Property as well, with different meanings, and the two vocabularies
+> were renamed apart so that no word carries two senses. A Property is visible or hidden.
 
 **Interaction**:
 One touch between the agent and a Contact that has already happened — a call, a WhatsApp exchange, a viewing. Append-only: interactions are corrected by adding, never by editing.
