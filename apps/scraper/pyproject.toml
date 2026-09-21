@@ -5,10 +5,10 @@ description = "Property agent workspace — contact/property book plus a scraped
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "pyturso>=0.7.2",       # Turso/libSQL driver; imported as `turso`
-    "pydantic>=2.9",
-    "pydantic-settings>=2.5",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
     "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
+    "uvicorn[standard]>=0.53.0",
     "httpx>=0.27",          # tier-1 fetcher (mudah.my)
     "apscheduler>=3.10",
 ]
@@ -18,8 +18,8 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
-    "ruff>=0.7",
-    "ty>=0.0.18",           # Astral type checker; preview, pinned loosely on purpose
+    "ruff>=0.16.7",
+    "ty>=0.0.81",           # Astral type checker; preview, pinned loosely on purpose
 ]
 
 [project.scripts]
